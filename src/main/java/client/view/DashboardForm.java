@@ -1,6 +1,7 @@
 package client.view;
 
-import client.callback.ClientCallbackImpl;
+import client.view.auth.LoginForm;
+import client.view.transfer.TransferForm;
 import common.models.Account;
 import common.models.Bill;
 import common.models.Saving;
@@ -10,6 +11,8 @@ import common.rmi.IBankService;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.rmi.RemoteException;
 import java.util.List;
 
@@ -17,32 +20,58 @@ public class DashboardForm extends JFrame {
     private final IBankService bankService;
     private final Account currentAccount;
     private JLabel lblBalance;
+    private TransferForm transferForm;
 
     public DashboardForm(IBankService bankService, Account account) {
         this.bankService = bankService;
         this.currentAccount = account;
 
         setTitle("e-Banking RMI - Xin chào: " + account.getFullName() + " (STK: " + account.getAccountNumber() + ")");
-        setSize(750, 520);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(800, 560);
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
 
-        // Header hiển thị số dư
-        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 10));
-        topPanel.setBackground(new Color(230, 240, 250));
-        JLabel lblUser = new JLabel("Chủ TK: " + account.getFullName() + " | STK: " + account.getAccountNumber());
-        lblBalance = new JLabel();
-        lblBalance.setFont(new Font("Arial", Font.BOLD, 14));
-        lblBalance.setForeground(new Color(0, 128, 0));
-        updateBalanceLabel();
+        // Bắt sự kiện đóng cửa sổ để dọn dẹp session trên Server
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                performLogout(true);
+            }
+        });
 
-        topPanel.add(lblUser);
-        topPanel.add(lblBalance);
+        // Header hiển thị số dư và nút Đăng xuất
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setBackground(new Color(230, 240, 250));
+        topPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+
+        JPanel userInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 0));
+        userInfoPanel.setBackground(new Color(230, 240, 250));
+        JLabel lblUser = new JLabel("Chủ TK: " + account.getFullName() + " | STK: " + account.getAccountNumber());
+        lblUser.setFont(new Font("Segoe UI", Font.BOLD, 13));
+
+        lblBalance = new JLabel();
+        lblBalance.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        lblBalance.setForeground(new Color(0, 128, 0));
+        userInfoPanel.add(lblUser);
+        userInfoPanel.add(lblBalance);
+
+        JButton btnLogout = new JButton("Đăng Xuất");
+        btnLogout.setBackground(new Color(220, 80, 80));
+        btnLogout.setForeground(Color.WHITE);
+        btnLogout.setFocusPainted(false);
+        btnLogout.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnLogout.addActionListener(e -> performLogout(false));
+
+        topPanel.add(userInfoPanel, BorderLayout.WEST);
+        topPanel.add(btnLogout, BorderLayout.EAST);
         add(topPanel, BorderLayout.NORTH);
+
+        updateBalanceLabel();
 
         // Tab chứa các phân hệ của 3 thành viên
         JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.addTab("1. Chuyển Khoản (Dev 1)", createTransferPanel());
+        transferForm = new TransferForm(bankService, currentAccount, () -> updateBalanceLabel());
+        tabbedPane.addTab("1. Chuyển Khoản (Dev 1)", transferForm);
         tabbedPane.addTab("2. Thanh Toán Hóa Đơn & Sao Kê (Dev 2)", createBillAndHistoryPanel());
         tabbedPane.addTab("3. Tiết Kiệm & Admin (Dev 3)", createSavingAndAdminPanel());
 
@@ -54,45 +83,34 @@ public class DashboardForm extends JFrame {
             double bal = bankService.getBalance(currentAccount.getAccountNumber());
             currentAccount.setBalance(bal);
             lblBalance.setText("Số Dư: " + String.format("%,.0f VNĐ", bal));
+            if (transferForm != null) {
+                transferForm.refreshBalance();
+            }
         } catch (RemoteException e) {
             e.printStackTrace();
         }
     }
 
-    // --- TAB 1: NGƯỜI 1 (CHUYỂN KHOẢN) ---
-    private JPanel createTransferPanel() {
-        JPanel panel = new JPanel(new GridLayout(4, 2, 10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(20, 40, 20, 40));
+    private void performLogout(boolean exitOnConfirm) {
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?",
+                "Xác Nhận Đăng Xuất",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
 
-        JTextField txtToAcc = new JTextField();
-        JTextField txtAmount = new JTextField();
-        JTextField txtDesc = new JTextField("Chuyen tien");
-        JButton btnSend = new JButton("Xác Nhận Chuyển Tiền");
-
-        panel.add(new JLabel("Số tài khoản nhận:")); panel.add(txtToAcc);
-        panel.add(new JLabel("Số tiền (VNĐ):")); panel.add(txtAmount);
-        panel.add(new JLabel("Nội dung:")); panel.add(txtDesc);
-        panel.add(new JLabel("")); panel.add(btnSend);
-
-        btnSend.addActionListener(e -> {
+        if (confirm == JOptionPane.YES_OPTION) {
             try {
-                String toAcc = txtToAcc.getText().trim();
-                double amount = Double.parseDouble(txtAmount.getText().trim());
-                String desc = txtDesc.getText().trim();
-
-                boolean ok = bankService.transfer(currentAccount.getAccountNumber(), toAcc, amount, desc);
-                if (ok) {
-                    JOptionPane.showMessageDialog(this, "Chuyển tiền thành công!");
-                    updateBalanceLabel();
-                    txtAmount.setText("");
-                } else {
-                    JOptionPane.showMessageDialog(this, "Thất bại: Số dư không đủ hoặc số tài khoản nhận sai!", "Lỗi", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Dữ liệu nhập không hợp lệ!", "Lỗi", JOptionPane.ERROR_MESSAGE);
+                bankService.logout(currentAccount.getUsername());
+            } catch (RemoteException ex) {
+                System.err.println("Lỗi gọi logout tới server: " + ex.getMessage());
             }
-        });
-        return panel;
+            dispose();
+            if (exitOnConfirm) {
+                System.exit(0);
+            } else {
+                new LoginForm().setVisible(true);
+            }
+        }
     }
 
     // --- TAB 2: NGƯỜI 2 (HÓA ĐƠN & SAO KÊ) ---

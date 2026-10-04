@@ -13,7 +13,6 @@ import java.rmi.server.UnicastRemoteObject;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -44,17 +43,21 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public synchronized Account login(String username, String password, IClientCallback callback) throws RemoteException {
+        if (username == null || password == null) return null;
+        final String uName = username.trim();
+        final String pwd = password.trim();
+
         String sql = "SELECT * FROM accounts WHERE username = ? AND password = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, username);
-            ps.setString(2, password);
+            ps.setString(1, uName);
+            ps.setString(2, pwd);
             ResultSet rs = ps.executeQuery();
 
             if (rs.next()) {
                 String status = rs.getString("status");
                 if ("LOCKED".equalsIgnoreCase(status)) {
-                    System.out.println("Tài khoản bị khóa: " + username);
+                    System.out.println("Tài khoản bị khóa: " + uName);
                     return null;
                 }
 
@@ -68,10 +71,34 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                         status
                 );
 
+                // Xử lý login trùng: nếu user hoặc tài khoản này đã có phiên online trước đó
+                String oldAcc = userSessionMap.get(uName);
+                if (oldAcc != null) {
+                    IClientCallback oldCb = onlineClients.remove(oldAcc);
+                    if (oldCb != null) {
+                        try {
+                            oldCb.forceLogout("Tài khoản của bạn đã được đăng nhập từ một phiên làm việc khác.");
+                        } catch (RemoteException ignored) {
+                            // Client cũ đã ngắt kết nối
+                        }
+                    }
+                    userSessionMap.remove(uName);
+                }
+
+                // Nếu có callback đăng ký cùng accountNumber
+                IClientCallback existingAccCb = onlineClients.remove(acc.getAccountNumber());
+                if (existingAccCb != null && existingAccCb != callback) {
+                    try {
+                        existingAccCb.forceLogout("Phiên làm việc của bạn đã hết hạn do tài khoản được đăng nhập ở nơi khác.");
+                    } catch (RemoteException ignored) {}
+                }
+
                 // Đăng ký Callback lắng nghe biến động số dư
-                onlineClients.put(acc.getAccountNumber(), callback);
-                userSessionMap.put(username, acc.getAccountNumber());
-                System.out.println(">> [ONLINE] User: " + username + " (STK: " + acc.getAccountNumber() + ")");
+                if (callback != null) {
+                    onlineClients.put(acc.getAccountNumber(), callback);
+                }
+                userSessionMap.put(uName, acc.getAccountNumber());
+                System.out.println(">> [ONLINE] User: " + uName + " (STK: " + acc.getAccountNumber() + ")");
                 return acc;
             }
         } catch (SQLException e) {
@@ -82,35 +109,51 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public boolean register(String username, String password, String fullName, String accountNumber) throws RemoteException {
+        if (username == null || username.trim().isEmpty() ||
+            password == null || password.trim().isEmpty() ||
+            fullName == null || fullName.trim().isEmpty() ||
+            accountNumber == null || accountNumber.trim().isEmpty()) {
+            return false;
+        }
+
         String sql = "INSERT INTO accounts (account_number, username, password, full_name, balance, status) VALUES (?, ?, ?, ?, 0.0, 'ACTIVE')";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            ps.setString(2, username);
-            ps.setString(3, password);
-            ps.setString(4, fullName);
+            ps.setString(1, accountNumber.trim());
+            ps.setString(2, username.trim());
+            ps.setString(3, password.trim());
+            ps.setString(4, fullName.trim());
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.err.println("Lỗi đăng ký tài khoản: " + e.getMessage());
             return false;
         }
     }
 
     @Override
     public synchronized void logout(String username) throws RemoteException {
-        String accNum = userSessionMap.remove(username);
+        if (username == null) return;
+        final String uName = username.trim();
+
+        String accNum = userSessionMap.remove(uName);
         if (accNum != null) {
             onlineClients.remove(accNum);
-            System.out.println("<< [OFFLINE] User: " + username);
+            System.out.println("<< [OFFLINE] User: " + uName + " (STK: " + accNum + ")");
+        } else {
+            // Trường hợp truyền vào STK thay vì username
+            onlineClients.remove(uName);
+            userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(uName));
+            System.out.println("<< [OFFLINE] Session cleanup for: " + uName);
         }
     }
 
     @Override
     public double getBalance(String accountNumber) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return -1;
         String sql = "SELECT balance FROM accounts WHERE account_number = ?";
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
+            ps.setString(1, accountNumber.trim());
             ResultSet rs = ps.executeQuery();
             if (rs.next()) {
                 return rs.getDouble("balance");
@@ -123,68 +166,123 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public synchronized boolean transfer(String fromAcc, String toAcc, double amount, String description) throws RemoteException {
-        if (amount <= 0 || fromAcc.equals(toAcc)) return false;
-
-        String checkBalSql = "SELECT balance FROM accounts WHERE account_number = ? FOR UPDATE";
-        String deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ?";
-        String addSql = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
-        String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
+        if (amount <= 0 || fromAcc == null || toAcc == null) return false;
+        fromAcc = fromAcc.trim();
+        toAcc = toAcc.trim();
+        if (fromAcc.isEmpty() || toAcc.isEmpty() || fromAcc.equals(toAcc)) return false;
 
         Connection conn = null;
         try {
             conn = DatabaseConnection.getConnection();
-            conn.setAutoCommit(false); // BẮT ĐẦU TRANSACTION 3 LỚP
+            conn.setAutoCommit(false); // BẮT ĐẦU TRANSACTION ACID 3 LỚP
 
-            // 1. Kiểm tra số dư người gửi
+            // 1. Tránh Deadlock đa luồng bằng cách lock 2 tài khoản theo thứ tự sắp xếp cố định
+            String firstLock = fromAcc.compareTo(toAcc) < 0 ? fromAcc : toAcc;
+            String secondLock = fromAcc.compareTo(toAcc) < 0 ? toAcc : fromAcc;
+
+            String lockSql = "SELECT account_number, balance, status FROM accounts WHERE account_number = ? FOR UPDATE";
+
+            try (PreparedStatement psLock1 = conn.prepareStatement(lockSql)) {
+                psLock1.setString(1, firstLock);
+                ResultSet rs1 = psLock1.executeQuery();
+                if (!rs1.next()) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            try (PreparedStatement psLock2 = conn.prepareStatement(lockSql)) {
+                psLock2.setString(1, secondLock);
+                ResultSet rs2 = psLock2.executeQuery();
+                if (!rs2.next()) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            // 2. Kiểm tra thông tin & số dư tài khoản người gửi
+            String checkSenderSql = "SELECT balance, status FROM accounts WHERE account_number = ?";
             double currentBal = 0.0;
-            try (PreparedStatement psCheck = conn.prepareStatement(checkBalSql)) {
-                psCheck.setString(1, fromAcc);
-                ResultSet rs = psCheck.executeQuery();
+            try (PreparedStatement psSender = conn.prepareStatement(checkSenderSql)) {
+                psSender.setString(1, fromAcc);
+                ResultSet rs = psSender.executeQuery();
                 if (!rs.next()) {
                     conn.rollback();
                     return false;
                 }
+                String senderStatus = rs.getString("status");
+                if (!"ACTIVE".equalsIgnoreCase(senderStatus)) {
+                    conn.rollback();
+                    return false; // Tài khoản gửi bị khóa hoặc không hoạt động
+                }
                 currentBal = rs.getDouble("balance");
                 if (currentBal < amount) {
                     conn.rollback();
-                    return false; // Không đủ tiền
+                    return false; // Số dư không đủ
                 }
             }
 
-            // 2. Trừ tiền người gửi
+            // 3. Kiểm tra trạng thái tài khoản người nhận
+            String checkReceiverSql = "SELECT status FROM accounts WHERE account_number = ?";
+            try (PreparedStatement psReceiver = conn.prepareStatement(checkReceiverSql)) {
+                psReceiver.setString(1, toAcc);
+                ResultSet rs = psReceiver.executeQuery();
+                if (!rs.next()) {
+                    conn.rollback();
+                    return false; // Tài khoản nhận không tồn tại
+                }
+                String receiverStatus = rs.getString("status");
+                if (!"ACTIVE".equalsIgnoreCase(receiverStatus)) {
+                    conn.rollback();
+                    return false; // Tài khoản nhận đang bị khóa
+                }
+            }
+
+            // 4. Trừ tiền người gửi (kèm điều kiện balance >= amount để bảo vệ kép chống race condition)
+            String deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ? AND balance >= ?";
             try (PreparedStatement psDeduct = conn.prepareStatement(deductSql)) {
                 psDeduct.setDouble(1, amount);
                 psDeduct.setString(2, fromAcc);
-                psDeduct.executeUpdate();
-            }
-
-            // 3. Cộng tiền người nhận
-            try (PreparedStatement psAdd = conn.prepareStatement(addSql)) {
-                psAdd.setDouble(1, amount);
-                psAdd.setString(2, toAcc);
-                int rows = psAdd.executeUpdate();
-                if (rows == 0) { // Tài khoản nhận không tồn tại
+                psDeduct.setDouble(3, amount);
+                int rows = psDeduct.executeUpdate();
+                if (rows == 0) {
                     conn.rollback();
                     return false;
                 }
             }
 
-            // 4. Ghi nhận giao dịch
+            // 5. Cộng tiền người nhận
+            String addSql = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
+            try (PreparedStatement psAdd = conn.prepareStatement(addSql)) {
+                psAdd.setDouble(1, amount);
+                psAdd.setString(2, toAcc);
+                int rows = psAdd.executeUpdate();
+                if (rows == 0) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            // 6. Ghi nhận giao dịch
+            String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
             try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
                 psTx.setString(1, "CHUYEN_TIEN");
                 psTx.setString(2, fromAcc);
                 psTx.setString(3, toAcc);
                 psTx.setDouble(4, amount);
-                psTx.setString(5, description);
+                psTx.setString(5, description != null ? description : "Chuyen tien");
                 psTx.executeUpdate();
             }
 
-            // Chốt giao dịch thành công
+            // Chốt transaction thành công
             conn.commit();
             conn.setAutoCommit(true);
 
-            // 5. THỰC HIỆN CALLBACK CHO NGƯỜI NHẬN (NẾU ĐANG ONLINE)
-            triggerCallback(toAcc, "Tài khoản nhận +" + amount + " VNĐ từ " + fromAcc + " (ND: " + description + ")");
+            // 7. THỰC HIỆN CALLBACK CHO NGƯỜI NHẬN (NẾU ĐANG ONLINE)
+            String cbMsg = "Tài khoản nhận +" + String.format("%,.0f", amount) + " VNĐ từ " + fromAcc
+                    + (description != null && !description.isEmpty() ? " (ND: " + description + ")" : "");
+            triggerCallback(toAcc, cbMsg);
+
             return true;
 
         } catch (SQLException e) {
@@ -458,6 +556,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
             if (rows > 0) {
                 // Nếu tài khoản đang online, đá văng ngay lập tức
                 IClientCallback cb = onlineClients.remove(accountNumber);
+                userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accountNumber));
                 if (cb != null) {
                     try {
                         cb.forceLogout("Tài khoản của bạn đã bị khóa bởi Quản trị viên. Lý do: " + reason);
@@ -486,8 +585,9 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                 cb.notifyBalanceChange(message, latestBal);
             } catch (RemoteException e) {
                 // Client đã ngắt kết nối bất thường (rút dây mạng, tắt app ngang)
-                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang xóa...");
+                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang dọn dẹp session...");
                 onlineClients.remove(accountNumber);
+                userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accountNumber));
             }
         }
     }
