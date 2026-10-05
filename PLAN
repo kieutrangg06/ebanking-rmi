@@ -1,69 +1,4 @@
-Dựa trên tài liệu phân tích kiến trúc RMI và hình ảnh repo `kieutrangg06/ebanking-rmi` đã có sẵn 4 nhánh (`main`, `feature/core-auth-transfer`, `feature/bill-transaction`, `feature/saving-admin`), dưới đây là kế hoạch chi tiết định dạng Markdown và quy trình lệnh Git chuẩn giúp 3 người làm song song độc lập, tránh tối đa xung đột (merge conflict).
-
----
-
-### Kế hoạch triển khai & Cấu trúc mã nguồn (`PLAN.md`)
-
-```markdown
-# KẾ HOẠCH TRIỂN KHAI DỰ ÁN RMI E-BANKING
-
-## 1. Timeline & Mốc thời gian
-- Ngày 1 (Bắt đầu): Chốt bộ giao diện RMI (`common/`), tạo skeleton và đẩy lên `main`.
-- Ngày 2 - 5 (Làm việc song song): Mỗi dev làm độc lập trên feature branch riêng, không chạm vào `common/`.
-- Ngày 6 (Kiểm thử & Tích hợp): Tạo Pull Request, merge từng nhánh vào `main`, test liên thông 3 luồng.
-- Ngày 7 (Hoàn thiện & Nộp bài): Đóng băng code, xuất file build/jar, test kịch bản demo và nộp bài.
-
-## 2. Kiến trúc thư mục tách biệt (Tránh Conflict)
-ebanking-rmi/
-├── src/
-│   ├── common/                # [CHỐT DAY 1 - KHÔNG ĐƯỢC ĐỔI NỮA]
-│   │   ├── models/            # Account, Bill, Transaction, Saving (Serializable)
-│   │   └── rmi/               # IBankService.java, IClientCallback.java
-│   │
-│   ├── server/                
-│   │   ├── db/                # DatabaseConnection.java (Dev 1 dựng khung)
-│   │   ├── dao/               # Tách file DAO theo từng người
-│   │   │   ├── AccountDAO.java        # Dev 1
-│   │   │   ├── BillDAO.java           # Dev 2
-│   │   │   ├── TransactionDAO.java    # Dev 2
-│   │   │   └── SavingDAO.java         # Dev 3
-│   │   ├── service/           # Chia nhỏ Service Implementation
-│   │   │   ├── CoreBankServiceImpl.java   # Dev 1 (Login, Transfer, Callback pool)
-│   │   │   ├── BillServiceImpl.java       # Dev 2 (Pay bill, Transaction history)
-│   │   │   └── SavingServiceImpl.java     # Dev 3 (Interest calculator, Admin revoke)
-│   │   └── ServerMain.java    # Khởi tạo RMI Registry (1099), bind dịch vụ
-│   │
-│   └── client/                
-│       ├── callback/          # ClientCallbackImpl.java (Dev 1 dựng cơ chế)
-│       └── view/              # Chia folder view riêng cho từng dev
-│           ├── auth/          # LoginForm.java, RegisterForm.java (Dev 1)
-│           ├── transfer/      # TransferForm.java (Dev 1)
-│           ├── bill/          # BillPayForm.java, HistoryForm.java (Dev 2)
-│           └── admin/         # SavingForm.java, AdminDashboardForm.java (Dev 3)
-
-## 3. Phân công & Lỗ hổng cần Test (Test Cases)
-- Dev 1 (Core & Transfer):
-  + Test Double-click transfer (Race Condition -> số dư không được âm).
-  + Test Dead Callback (Client B tắt đột ngột -> Server bắt RemoteException, gỡ khỏi session pool, không treo thread).
-- Dev 2 (Bill & Transaction):
-  + Test ACID Transaction: Ngắt DB khi vừa trừ tiền -> Rollback, không để tình trạng mất tiền nhưng hóa đơn còn nợ.
-  + Test Concurrency: 2 client thanh toán cùng 1 mã hóa đơn -> Chỉ 1 máy thành công.
-- Dev 3 (Saving & Admin):
-  + Test Thread Leak: Tất toán sổ tiết kiệm -> Dừng ScheduledExecutorService tính lãi.
-  + Test Remote Revocation: Admin bấm Kick/Lock -> Callback gọi client tự hủy session về Login.
-
-```
-
----
-
-### Bộ lệnh Git chi tiết cho từng thành viên
-
-Repo GitHub hiện đã có sẵn 3 nhánh feature. Các thành viên lấy mã nguồn về và làm việc độc lập theo đúng các lệnh sau:
-
-#### 1. Dành cho Dev 1 (Core / Auth / Transfer)
-
-```bash
-# Clone repo
+Bộ lệnh Git chi tiết cho từng thành viênRepo GitHub hiện đã có sẵn 3 nhánh feature. Các thành viên lấy mã nguồn về và làm việc độc lập theo đúng các lệnh sau:   1. Dành cho Dev 1 (Core / Auth / Transfer)Bash# Clone repo
 git clone https://github.com/kieutrangg06/ebanking-rmi.git
 cd ebanking-rmi
 
@@ -74,13 +9,7 @@ git checkout feature/core-auth-transfer
 git add .
 git commit -m "feat(core): implement rmi callback and transfer concurrency"
 git push origin feature/core-auth-transfer
-
-```
-
-#### 2. Dành cho Dev 2 (Hóa đơn & Lịch sử GD)
-
-```bash
-# Clone repo
+2. Dành cho Dev 2 (Hóa đơn & Lịch sử GD)Bash# Clone repo
 git clone https://github.com/kieutrangg06/ebanking-rmi.git
 cd ebanking-rmi
 
@@ -91,13 +20,7 @@ git checkout -b feature/bill-transaction origin/feature/bill-transaction
 git add .
 git commit -m "feat(bill): implement bill payment with acid rollback"
 git push origin feature/bill-transaction
-
-```
-
-#### 3. Dành cho Dev 3 (Tiết kiệm & Admin)
-
-```bash
-# Clone repo
+3. Dành cho Dev 3 (Tiết kiệm & Admin)Bash# Clone repo
 git clone https://github.com/kieutrangg06/ebanking-rmi.git
 cd ebanking-rmi
 
@@ -108,36 +31,6 @@ git checkout -b feature/saving-admin origin/feature/saving-admin
 git add .
 git commit -m "feat(saving): background thread interest calculation and admin kick"
 git push origin feature/saving-admin
-
-```
-
----
-
-### Quy trình tích hợp (Merge Code) an toàn vào Ngày 6
-
-Để không bao giờ bị dính xung đột mã nguồn:
-
-1. **Không ai merge trực tiếp vào local `main`:** Từng người đẩy toàn bộ code đã hoàn thiện lên nhánh của mình trên GitHub.
-
-
-2. **Tạo Pull Request (PR):**
-* Dev 1 tạo PR: `feature/core-auth-transfer` $\rightarrow$ `main` (Merge đầu tiên làm mốc nền).
-
-
-* Dev 2 tạo PR: `feature/bill-transaction` $\rightarrow$ `main`.
-
-
-* Dev 3 tạo PR: `feature/saving-admin` $\rightarrow$ `main`.
-
-
-
-
-3. **Cập nhật nhánh trước khi nộp:** Sau khi `main` đã merge đủ các nhánh, từng dev ở máy mình chạy:
-```bash
-git checkout main
+Quy trình tích hợp (Merge Code) an toàn vào Ngày 6Để không bao giờ bị dính xung đột mã nguồn:Không ai merge trực tiếp vào local main: Từng người đẩy toàn bộ code đã hoàn thiện lên nhánh của mình trên GitHub.   Tạo Pull Request (PR):Dev 1 tạo PR: feature/core-auth-transfer $\rightarrow$ main (Merge đầu tiên làm mốc nền).   Dev 2 tạo PR: feature/bill-transaction $\rightarrow$ main.   Dev 3 tạo PR: feature/saving-admin $\rightarrow$ main.   Cập nhật nhánh trước khi nộp: Sau khi main đã merge đủ các nhánh, từng dev ở máy mình chạy:Bashgit checkout main
 git pull origin main
-
-```
-
-
-Chạy file `ServerMain` và mở đồng thời 2-3 `ClientMain` để test toàn bộ kịch bản liên thông.
+Chạy file ServerMain và mở đồng thời 2-3 ClientMain để test toàn bộ kịch bản liên thông.   
