@@ -43,6 +43,7 @@ public class CoreAuthTransferTest {
             if (runTest("TEST 10: Login & Logout -> Quản lý phiên Session sạch sẽ", CoreAuthTransferTest::test10_LogoutSessionCleanup)) passed++; else failed++;
             if (runTest("TEST 11: Register tài khoản mới & Đăng nhập thành công", CoreAuthTransferTest::test11_RegisterAndLogin)) passed++; else failed++;
             if (runTest("TEST 12: Đăng nhập trùng -> Đá phiên cũ (ForceLogout)", CoreAuthTransferTest::test12_ConcurrentDuplicateLogin)) passed++; else failed++;
+            if (runTest("TEST 13: Tra cứu thông tin người thụ hưởng (getAccountByNumber)", CoreAuthTransferTest::test13_GetAccountByNumber)) passed++; else failed++;
 
         } catch (Exception e) {
             System.err.println("Lỗi nghiêm trọng khi chạy bộ kiểm thử: " + e.getMessage());
@@ -52,11 +53,11 @@ public class CoreAuthTransferTest {
         System.out.println("\n=================================================================");
         System.out.println("                   KẾT QUẢ KIỂM THỬ CUỐI CÙNG                    ");
         System.out.println("=================================================================");
-        System.out.println("Tổng số test cases: 12");
+        System.out.println("Tổng số test cases: 13");
         System.out.println("PASS : " + passed);
         System.out.println("FAIL : " + failed);
         System.out.println("TRẠNG THÁI: " + (failed == 0 ? "HOÀN TOÀN ĐẠT CHUẨN (ALL PASS)" : "CÓ TEST THẤT BẠI"));
-        System.out.println("=================================================================\n");
+        System.out.println("=================================================================\\n");
 
         System.exit(failed == 0 ? 0 : 1);
     }
@@ -335,5 +336,16 @@ public class CoreAuthTransferTest {
 
         bankService.logout("usera");
         return cb1Online && cb2Online && cb1Kicked;
+    }
+
+    // TEST 13: Tra cứu thông tin người thụ hưởng (getAccountByNumber)
+    private static boolean test13_GetAccountByNumber() throws Exception {
+        Account acc1001 = bankService.getAccountByNumber("1001");
+        Account acc9999 = bankService.getAccountByNumber("99999999");
+        boolean ok1001 = acc1001 != null && "Nguyen Van A".equals(acc1001.getFullName()) && "ACTIVE".equals(acc1001.getStatus()) && (acc1001.getPassword() == null || acc1001.getPassword().isEmpty());
+        boolean ok9999 = (acc9999 == null);
+        System.out.println("Tra cứu 1001: " + (acc1001 != null ? acc1001.getFullName() : "null") + " (Mật khẩu được bảo vệ ẩn: " + (acc1001 != null && acc1001.getPassword().isEmpty()) + ")");
+        System.out.println("Tra cứu tài khoản không tồn tại 99999999: " + acc9999);
+        return ok1001 && ok9999;
     }
 }

@@ -1,5 +1,10 @@
 package client.view.auth;
 
+import client.view.ui.ModernButton;
+import client.view.ui.ModernPasswordField;
+import client.view.ui.ModernTextField;
+import client.view.ui.RoundedPanel;
+import client.view.ui.UITheme;
 import common.rmi.IBankService;
 
 import javax.swing.*;
@@ -10,14 +15,14 @@ import java.rmi.registry.Registry;
 
 public class RegisterForm extends JFrame {
     private final LoginForm parentLogin;
-    private JTextField txtHost;
-    private JTextField txtAccountNum;
-    private JTextField txtUsername;
-    private JPasswordField txtPassword;
-    private JPasswordField txtConfirmPassword;
-    private JTextField txtFullName;
-    private JButton btnRegister;
-    private JButton btnCancel;
+    private ModernTextField txtHost;
+    private ModernTextField txtAccountNum;
+    private ModernTextField txtFullName;
+    private ModernTextField txtUsername;
+    private ModernPasswordField txtPassword;
+    private ModernPasswordField txtConfirmPassword;
+    private ModernButton btnRegister;
+    private ModernButton btnCancel;
     private JLabel lblStatus;
 
     public RegisterForm(LoginForm parentLogin, String defaultHost) {
@@ -26,113 +31,131 @@ public class RegisterForm extends JFrame {
     }
 
     private void initComponents(String defaultHost) {
-        setTitle("e-Banking RMI - Đăng Ký Tài Khoản Mới");
-        setSize(440, 460);
+        setTitle("e-Banking RMI - Mở Tài Khoản Trực Tuyến");
+        setSize(500, 670);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(parentLogin);
         setResizable(false);
+        getContentPane().setBackground(UITheme.BG_MAIN);
 
-        JPanel mainPanel = new JPanel();
-        mainPanel.setLayout(new BorderLayout(10, 10));
-        mainPanel.setBorder(new EmptyBorder(15, 25, 15, 25));
-        mainPanel.setBackground(new Color(245, 247, 250));
+        JPanel contentPane = new JPanel(new BorderLayout());
+        contentPane.setBackground(UITheme.BG_MAIN);
+        contentPane.setBorder(new EmptyBorder(20, 25, 20, 25));
+
+        RoundedPanel mainCard = new RoundedPanel(20, Color.WHITE);
+        mainCard.setLayout(new BoxLayout(mainCard, BoxLayout.Y_AXIS));
+        mainCard.setBorder(new EmptyBorder(20, 25, 20, 25));
+        mainCard.setShowShadow(true);
 
         // Header
-        JPanel headerPanel = new JPanel(new GridLayout(2, 1, 4, 4));
-        headerPanel.setBackground(new Color(245, 247, 250));
-        JLabel lblTitle = new JLabel("Đăng Ký Tài Khoản", SwingConstants.CENTER);
-        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        lblTitle.setForeground(new Color(24, 76, 120));
+        JPanel headerPanel = new JPanel();
+        headerPanel.setLayout(new BoxLayout(headerPanel, BoxLayout.Y_AXIS));
+        headerPanel.setOpaque(false);
+        headerPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        JLabel lblSub = new JLabel("Tạo tài khoản trực tuyến trên hệ thống eBanking", SwingConstants.CENTER);
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblSub.setForeground(Color.GRAY);
-
+        JLabel lblTitle = new JLabel("Đăng Ký Tài Khoản Mới");
+        lblTitle.setFont(UITheme.FONT_TITLE_XL);
+        lblTitle.setForeground(UITheme.PRIMARY_DARK);
+        lblTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
         headerPanel.add(lblTitle);
+
+        headerPanel.add(Box.createVerticalStrut(4));
+
+        JLabel lblSub = new JLabel("Mở tài khoản thanh toán trực tuyến nhanh chóng & an toàn");
+        lblSub.setFont(UITheme.FONT_SMALL);
+        lblSub.setForeground(UITheme.TEXT_MUTED);
+        lblSub.setAlignmentX(Component.CENTER_ALIGNMENT);
         headerPanel.add(lblSub);
-        mainPanel.add(headerPanel, BorderLayout.NORTH);
 
-        // Form Fields
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBackground(new Color(245, 247, 250));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        mainCard.add(headerPanel);
+        mainCard.add(Box.createVerticalStrut(15));
 
-        // Host
-        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.35;
-        formPanel.add(new JLabel("Máy chủ RMI:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 0; gbc.weightx = 0.65;
-        txtHost = new JTextField(defaultHost != null && !defaultHost.isEmpty() ? defaultHost : "localhost");
-        formPanel.add(txtHost, gbc);
+        // Form Fields Container
+        JPanel formFields = new JPanel();
+        formFields.setLayout(new BoxLayout(formFields, BoxLayout.Y_AXIS));
+        formFields.setOpaque(false);
 
-        // Account Number
-        gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Số tài khoản:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 1;
-        txtAccountNum = new JTextField();
-        formPanel.add(txtAccountNum, gbc);
+        // RMI Host
+        formFields.add(createFieldLabel("Máy chủ RMI:"));
+        txtHost = new ModernTextField("localhost");
+        txtHost.setText(defaultHost != null && !defaultHost.isEmpty() ? defaultHost : "localhost");
+        txtHost.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtHost);
+        formFields.add(Box.createVerticalStrut(10));
 
-        // Full Name
-        gbc.gridx = 0; gbc.gridy = 2;
-        formPanel.add(new JLabel("Họ và tên:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 2;
-        txtFullName = new JTextField();
-        formPanel.add(txtFullName, gbc);
+        // Số tài khoản
+        formFields.add(createFieldLabel("Số tài khoản mong muốn (*):"));
+        txtAccountNum = new ModernTextField("VD: 1004, 2026, 8888...");
+        txtAccountNum.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtAccountNum);
+        formFields.add(Box.createVerticalStrut(10));
+
+        // Họ và tên
+        formFields.add(createFieldLabel("Họ và tên chủ tài khoản (*):"));
+        txtFullName = new ModernTextField("VD: NGUYEN VAN A");
+        txtFullName.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtFullName);
+        formFields.add(Box.createVerticalStrut(10));
 
         // Username
-        gbc.gridx = 0; gbc.gridy = 3;
-        formPanel.add(new JLabel("Tên đăng nhập:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 3;
-        txtUsername = new JTextField();
-        formPanel.add(txtUsername, gbc);
+        formFields.add(createFieldLabel("Tên đăng nhập hệ thống (*):"));
+        txtUsername = new ModernTextField("VD: usera, nguyenvan_a");
+        txtUsername.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtUsername);
+        formFields.add(Box.createVerticalStrut(10));
 
         // Password
-        gbc.gridx = 0; gbc.gridy = 4;
-        formPanel.add(new JLabel("Mật khẩu:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 4;
-        txtPassword = new JPasswordField();
-        formPanel.add(txtPassword, gbc);
+        formFields.add(createFieldLabel("Mật khẩu bảo mật (*):"));
+        txtPassword = new ModernPasswordField("Nhập mật khẩu (tối thiểu 6 ký tự)...");
+        txtPassword.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtPassword);
+        formFields.add(Box.createVerticalStrut(10));
 
         // Confirm Password
-        gbc.gridx = 0; gbc.gridy = 5;
-        formPanel.add(new JLabel("Nhập lại MK:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 5;
-        txtConfirmPassword = new JPasswordField();
-        formPanel.add(txtConfirmPassword, gbc);
+        formFields.add(createFieldLabel("Nhập lại mật khẩu xác nhận (*):"));
+        txtConfirmPassword = new ModernPasswordField("Nhập lại mật khẩu giống bên trên...");
+        txtConfirmPassword.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+        formFields.add(txtConfirmPassword);
+        formFields.add(Box.createVerticalStrut(10));
 
-        // Status Label
-        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2;
-        lblStatus = new JLabel(" ", SwingConstants.CENTER);
-        lblStatus.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        lblStatus.setForeground(Color.RED);
-        formPanel.add(lblStatus, gbc);
+        // Status banner
+        lblStatus = new JLabel(" ");
+        lblStatus.setFont(UITheme.FONT_SMALL);
+        lblStatus.setForeground(UITheme.DANGER);
+        lblStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
+        formFields.add(lblStatus);
 
-        mainPanel.add(formPanel, BorderLayout.CENTER);
+        mainCard.add(formFields);
+        mainCard.add(Box.createVerticalStrut(12));
 
         // Buttons
-        JPanel buttonPanel = new JPanel(new GridLayout(1, 2, 10, 0));
-        buttonPanel.setBackground(new Color(245, 247, 250));
+        JPanel actionPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        actionPanel.setOpaque(false);
+        actionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
 
-        btnCancel = new JButton("Quay Lại");
-        btnCancel.setBackground(new Color(230, 235, 245));
-        btnCancel.setFocusPainted(false);
-
-        btnRegister = new JButton("Đăng Ký Ngay");
-        btnRegister.setBackground(new Color(34, 139, 34));
-        btnRegister.setForeground(Color.WHITE);
-        btnRegister.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btnRegister.setFocusPainted(false);
-
-        buttonPanel.add(btnCancel);
-        buttonPanel.add(btnRegister);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
-
-        add(mainPanel);
-
-        // Events
+        btnCancel = new ModernButton("Quay Lại", ModernButton.Style.SECONDARY);
         btnCancel.addActionListener(e -> dispose());
+
+        btnRegister = new ModernButton("ĐĂNG KÝ NGAY", ModernButton.Style.SUCCESS);
         btnRegister.addActionListener(e -> performRegister());
+
+        actionPanel.add(btnCancel);
+        actionPanel.add(btnRegister);
+        mainCard.add(actionPanel);
+
+        contentPane.add(mainCard, BorderLayout.CENTER);
+        add(contentPane);
+
+        getRootPane().setDefaultButton(btnRegister);
+    }
+
+    private JLabel createFieldLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(UITheme.FONT_SMALL_BOLD);
+        label.setForeground(UITheme.TEXT_MUTED);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(new EmptyBorder(0, 2, 3, 0));
+        return label;
     }
 
     private void performRegister() {
@@ -144,17 +167,20 @@ public class RegisterForm extends JFrame {
         String confirmPass = new String(txtConfirmPassword.getPassword()).trim();
 
         if (host.isEmpty() || accNum.isEmpty() || fullName.isEmpty() || username.isEmpty() || password.isEmpty()) {
-            lblStatus.setText("Vui lòng điền đầy đủ tất cả thông tin!");
+            lblStatus.setForeground(UITheme.DANGER);
+            lblStatus.setText("Vui lòng điền đầy đủ tất cả các trường có dấu (*)!");
             return;
         }
 
         if (!password.equals(confirmPass)) {
-            lblStatus.setText("Mật khẩu xác nhận không khớp!");
+            lblStatus.setForeground(UITheme.DANGER);
+            lblStatus.setText("Mật khẩu xác nhận không khớp! Vui lòng kiểm tra lại.");
+            txtConfirmPassword.requestFocus();
             return;
         }
 
-        lblStatus.setForeground(Color.BLUE);
-        lblStatus.setText("Đang gửi yêu cầu đăng ký lên máy chủ...");
+        lblStatus.setForeground(UITheme.PRIMARY);
+        lblStatus.setText("Đang gửi yêu cầu khởi tạo tài khoản lên máy chủ...");
         btnRegister.setEnabled(false);
         btnCancel.setEnabled(false);
 
@@ -181,27 +207,34 @@ public class RegisterForm extends JFrame {
                     boolean success = get();
                     if (success) {
                         JOptionPane.showMessageDialog(RegisterForm.this,
-                                "Chúc mừng! Đăng ký tài khoản thành công.\nSố tài khoản: " + accNum + "\nTên đăng nhập: " + username,
-                                "Đăng Ký Thành Công", JOptionPane.INFORMATION_MESSAGE);
+                                "CHÚC MỪNG BẠN ĐÃ MỞ TÀI KHOẢN THÀNH CÔNG!\n\n" +
+                                "• Chủ tài khoản: " + fullName.toUpperCase() + "\n" +
+                                "• Số tài khoản: " + accNum + "\n" +
+                                "• Tên đăng nhập: " + username + "\n" +
+                                "• Số dư khởi tạo: 0 VNĐ\n\n" +
+                                "Bạn có thể sử dụng thông tin này để đăng nhập ngay bây giờ.",
+                                "Mở Tài Khoản Thành Công", JOptionPane.INFORMATION_MESSAGE);
                         if (parentLogin != null) {
                             parentLogin.setPrefilledUsername(username);
                         }
                         dispose();
                     } else {
-                        lblStatus.setForeground(Color.RED);
+                        lblStatus.setForeground(UITheme.DANGER);
                         if (error != null) {
                             lblStatus.setText("Lỗi mạng: Không kết nối được RMI Server!");
-                            JOptionPane.showMessageDialog(RegisterForm.this, "Lỗi kết nối: " + error, "Lỗi", JOptionPane.ERROR_MESSAGE);
-                        } else {
-                            lblStatus.setText("Tên đăng nhập hoặc Số tài khoản đã tồn tại!");
                             JOptionPane.showMessageDialog(RegisterForm.this,
-                                    "Đăng ký thất bại: Tên đăng nhập hoặc Số tài khoản đã được sử dụng!",
-                                    "Đăng Ký Thất Bại", JOptionPane.WARNING_MESSAGE);
+                                    "Không thể kết nối đến máy chủ RMI: " + error,
+                                    "Lỗi Kết Nối", JOptionPane.ERROR_MESSAGE);
+                        } else {
+                            lblStatus.setText("Tên đăng nhập hoặc Số tài khoản đã được sử dụng!");
+                            JOptionPane.showMessageDialog(RegisterForm.this,
+                                    "Tên đăng nhập hoặc Số tài khoản đã tồn tại trên hệ thống!\nVui lòng chọn một số tài khoản hoặc username khác.",
+                                    "Đăng Ký Không Thành Công", JOptionPane.WARNING_MESSAGE);
                         }
                     }
                 } catch (Exception ex) {
-                    lblStatus.setForeground(Color.RED);
-                    lblStatus.setText("Lỗi xử lý đăng ký!");
+                    lblStatus.setForeground(UITheme.DANGER);
+                    lblStatus.setText("Lỗi hệ thống khi đăng ký!");
                     ex.printStackTrace();
                 }
             }
