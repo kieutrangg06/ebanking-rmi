@@ -6,22 +6,28 @@ import common.models.Saving;
 import common.models.Transaction;
 import common.rmi.IBankService;
 import common.rmi.IClientCallback;
+import server.dao.AccountDAO;
 import server.dao.SavingDAO;
 import server.db.DatabaseConnection;
 
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class BankServiceImpl extends UnicastRemoteObject implements IBankService {
     private static final long serialVersionUID = 1L;
 
-    // Lưu danh sách client đang online theo STK: accountNumber -> Callback
-    // Dùng ConcurrentHashMap để an toàn đa luồng khi nhiều người đăng nhập/đăng xuất cùng lúc
+    // DAO quản lý tài khoản & giao dịch lõi (Kiến trúc 3-Tier chuẩn)
+    private final AccountDAO accountDAO = new AccountDAO();
+
+    // Quản lý phiên kết nối tập trung trên Server bằng ConcurrentHashMap
+    // accountNumber -> Callback
     private final ConcurrentHashMap<String, IClientCallback> onlineClients = new ConcurrentHashMap<>();
 
     // Map phụ lưu username -> accountNumber để tiện tra cứu phiên
@@ -39,44 +45,55 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // PHẦN VIỆC CỦA NGƯỜI 1: AUTHENTICATION, QUẢN LÝ PHIÊN & CHUYỂN TIỀN CALLBACK
+    // NGƯỜI 1: AUTHENTICATION & QUẢN LÝ PHIÊN (LOGIN, LOGOUT, REGISTER)
     // =========================================================================
 
     @Override
     public synchronized Account login(String username, String password, IClientCallback callback) throws RemoteException {
-        String sql = "SELECT * FROM accounts WHERE username = ? AND password = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, username);
-            ps.setString(2, password);
-            ResultSet rs = ps.executeQuery();
+        if (username == null || password == null) return null;
+        final String uName = username.trim();
+        final String pwd = password.trim();
 
-            if (rs.next()) {
-                String status = rs.getString("status");
-                if ("LOCKED".equalsIgnoreCase(status)) {
-                    System.out.println("Tài khoản bị khóa: " + username);
+        try {
+            Account acc = accountDAO.authenticate(uName, pwd);
+            if (acc != null) {
+                if ("LOCKED".equalsIgnoreCase(acc.getStatus())) {
+                    System.out.println(">> [LOGIN REJECTED] Tài khoản đang bị khóa: " + uName);
                     return null;
                 }
 
-                Account acc = new Account(
-                        rs.getInt("id"),
-                        rs.getString("account_number"),
-                        rs.getString("username"),
-                        rs.getString("password"),
-                        rs.getString("full_name"),
-                        rs.getDouble("balance"),
-                        status
-                );
+                // Xử lý login trùng: nếu user hoặc tài khoản này đã có phiên online trước đó -> kick phiên cũ
+                String oldAcc = userSessionMap.get(uName);
+                if (oldAcc != null) {
+                    IClientCallback oldCb = onlineClients.remove(oldAcc);
+                    if (oldCb != null) {
+                        try {
+                            oldCb.forceLogout("Tài khoản của bạn đã được đăng nhập từ một phiên làm việc khác.");
+                        } catch (RemoteException ignored) {
+                            // Client cũ đã ngắt kết nối
+                        }
+                    }
+                    userSessionMap.remove(uName);
+                }
+
+                // Nếu có callback đăng ký cùng accountNumber
+                IClientCallback existingAccCb = onlineClients.remove(acc.getAccountNumber());
+                if (existingAccCb != null && existingAccCb != callback) {
+                    try {
+                        existingAccCb.forceLogout("Phiên làm việc của bạn đã hết hạn do tài khoản được đăng nhập ở nơi khác.");
+                    } catch (RemoteException ignored) {}
+                }
 
                 // Đăng ký Callback lắng nghe biến động số dư
                 if (callback != null) {
                     onlineClients.put(acc.getAccountNumber(), callback);
                 }
-                userSessionMap.put(username, acc.getAccountNumber());
-                System.out.println(">> [ONLINE] User: " + username + " (STK: " + acc.getAccountNumber() + ")");
+                userSessionMap.put(uName, acc.getAccountNumber());
+                System.out.println(">> [ONLINE] User: " + uName + " (STK: " + acc.getAccountNumber() + ")");
                 return acc;
             }
         } catch (SQLException e) {
+            System.err.println("Lỗi xác thực người dùng trong Database: " + e.getMessage());
             e.printStackTrace();
         }
         return null;
@@ -84,126 +101,97 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public boolean register(String username, String password, String fullName, String accountNumber) throws RemoteException {
-        String sql = "INSERT INTO accounts (account_number, username, password, full_name, balance, status) VALUES (?, ?, ?, ?, 0.0, 'ACTIVE')";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            ps.setString(2, username);
-            ps.setString(3, password);
-            ps.setString(4, fullName);
-            return ps.executeUpdate() > 0;
+        if (username == null || username.trim().isEmpty() ||
+            password == null || password.trim().isEmpty() ||
+            fullName == null || fullName.trim().isEmpty() ||
+            accountNumber == null || accountNumber.trim().isEmpty()) {
+            return false;
+        }
+
+        try {
+            return accountDAO.createAccount(username.trim(), password.trim(), fullName.trim(), accountNumber.trim());
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.err.println("Lỗi đăng ký tài khoản mới: " + e.getMessage());
             return false;
         }
     }
 
     @Override
     public synchronized void logout(String username) throws RemoteException {
-        String accNum = userSessionMap.remove(username);
+        if (username == null) return;
+        final String uName = username.trim();
+
+        String accNum = userSessionMap.remove(uName);
         if (accNum != null) {
             onlineClients.remove(accNum);
-            System.out.println("<< [OFFLINE] User: " + username);
+            System.out.println("<< [OFFLINE] User: " + uName + " (STK: " + accNum + ")");
+        } else {
+            // Trường hợp truyền vào STK thay vì username
+            onlineClients.remove(uName);
+            userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(uName));
+            System.out.println("<< [OFFLINE] Session cleanup for: " + uName);
         }
     }
 
     @Override
     public double getBalance(String accountNumber) throws RemoteException {
-        String sql = "SELECT balance FROM accounts WHERE account_number = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getDouble("balance");
-            }
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return -1;
+        try {
+            return accountDAO.getBalance(accountNumber.trim());
         } catch (SQLException e) {
+            System.err.println("Lỗi truy vấn số dư tài khoản: " + e.getMessage());
             e.printStackTrace();
+            return -1;
         }
-        return -1;
     }
 
     @Override
-    public synchronized boolean transfer(String fromAcc, String toAcc, double amount, String description) throws RemoteException {
-        if (amount <= 0 || fromAcc.equals(toAcc)) return false;
-
-        String checkBalSql = "SELECT balance FROM accounts WHERE account_number = ? FOR UPDATE";
-        String deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ?";
-        String addSql = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
-        String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
-
-        Connection conn = null;
+    public Account getAccountByNumber(String accountNumber) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return null;
         try {
-            conn = DatabaseConnection.getConnection();
-            conn.setAutoCommit(false); // BẮT ĐẦU TRANSACTION 3 LỚP
-
-            // 1. Kiểm tra số dư người gửi
-            double currentBal = 0.0;
-            try (PreparedStatement psCheck = conn.prepareStatement(checkBalSql)) {
-                psCheck.setString(1, fromAcc);
-                ResultSet rs = psCheck.executeQuery();
-                if (!rs.next()) {
-                    conn.rollback();
-                    return false;
-                }
-                currentBal = rs.getDouble("balance");
-                if (currentBal < amount) {
-                    conn.rollback();
-                    return false; // Không đủ tiền
-                }
-            }
-
-            // 2. Trừ tiền người gửi
-            try (PreparedStatement psDeduct = conn.prepareStatement(deductSql)) {
-                psDeduct.setDouble(1, amount);
-                psDeduct.setString(2, fromAcc);
-                psDeduct.executeUpdate();
-            }
-
-            // 3. Cộng tiền người nhận
-            try (PreparedStatement psAdd = conn.prepareStatement(addSql)) {
-                psAdd.setDouble(1, amount);
-                psAdd.setString(2, toAcc);
-                int rows = psAdd.executeUpdate();
-                if (rows == 0) { // Tài khoản nhận không tồn tại
-                    conn.rollback();
-                    return false;
-                }
-            }
-
-            // 4. Ghi nhận giao dịch
-            try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
-                psTx.setString(1, "CHUYEN_TIEN");
-                psTx.setString(2, fromAcc);
-                psTx.setString(3, toAcc);
-                psTx.setDouble(4, amount);
-                psTx.setString(5, description);
-                psTx.executeUpdate();
-            }
-
-            // Chốt giao dịch thành công
-            conn.commit();
-            conn.setAutoCommit(true);
-
-            // 5. THỰC HIỆN CALLBACK CHO NGƯỜI NHẬN (NẾU ĐANG ONLINE)
-            triggerCallback(toAcc, "Tài khoản nhận +" + amount + " VNĐ từ " + fromAcc + " (ND: " + description + ")");
-            return true;
-
+            return accountDAO.findByAccountNumber(accountNumber.trim());
         } catch (SQLException e) {
-            if (conn != null) {
-                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            System.err.println("Lỗi tra cứu thông tin tài khoản: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    @Override
+    public List<String> getOnlineUsers() throws RemoteException {
+        return new ArrayList<>(onlineClients.keySet());
+    }
+
+    // =========================================================================
+    // NGƯỜI 1: CHUYỂN TIỀN ACID & RMI CALLBACK PATTERN
+    // =========================================================================
+
+    @Override
+    public synchronized boolean transfer(String fromAcc, String toAcc, double amount, String description) throws RemoteException {
+        if (amount <= 0 || fromAcc == null || toAcc == null) return false;
+        fromAcc = fromAcc.trim();
+        toAcc = toAcc.trim();
+        if (fromAcc.isEmpty() || toAcc.isEmpty() || fromAcc.equals(toAcc)) return false;
+
+        try {
+            boolean success = accountDAO.executeTransfer(fromAcc, toAcc, amount, description);
+            if (success) {
+                // Thực hiện Callback cho người nhận tiền (Event-driven Notification)
+                String cbMsg = "Tài khoản nhận +" + String.format("%,.0f", amount) + " VNĐ từ " + fromAcc
+                        + (description != null && !description.isEmpty() ? " (ND: " + description + ")" : "");
+                triggerCallback(toAcc, cbMsg);
+                return true;
             }
+            return false;
+        } catch (SQLException e) {
+            System.err.println("Lỗi giao dịch chuyển khoản: " + e.getMessage());
             e.printStackTrace();
             return false;
-        } finally {
-            if (conn != null) {
-                try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-            }
         }
     }
 
     // =========================================================================
-    // PHẦN VIỆC CỦA NGƯỜI 2: THANH TOÁN HÓA ĐƠN & XUẤT SAO KÊ
+    // PHẦN VIỆC CỦA NGƯỜI 2: HÓA ĐƠN & SAO KÊ
     // =========================================================================
 
     @Override
@@ -262,13 +250,13 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
             // 3. Ghi nhận giao dịch
             String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
-            try (PreparedStatement ps = conn.prepareStatement(recordTxSql)) {
-                ps.setString(1, "THANH_TOAN_HOA_DON");
-                ps.setString(2, accountNumber);
-                ps.setString(3, billCode);
-                ps.setDouble(4, bill.getAmount());
-                ps.setString(5, "Thanh toan hoa don: " + bill.getServiceType() + " (" + bill.getCustomerName() + ")");
-                ps.executeUpdate();
+            try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
+                psTx.setString(1, "THANH_TOAN_HOA_DON");
+                psTx.setString(2, accountNumber);
+                psTx.setString(3, billCode);
+                psTx.setDouble(4, bill.getAmount());
+                psTx.setString(5, "Thanh toan hoa don: " + bill.getServiceType() + " (" + bill.getCustomerName() + ")");
+                psTx.executeUpdate();
             }
 
             conn.commit();
@@ -370,11 +358,6 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
             e.printStackTrace();
             return new ArrayList<>();
         }
-    }
-
-    @Override
-    public List<String> getOnlineUsers() throws RemoteException {
-        return new ArrayList<>(onlineClients.keySet());
     }
 
     @Override
@@ -481,7 +464,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                 cb.notifyBalanceChange(message, latestBal);
             } catch (RemoteException e) {
                 // Client đã ngắt kết nối bất thường (rút dây mạng, tắt app ngang)
-                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang xóa session...");
+                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang dọn dẹp session...");
                 onlineClients.remove(accountNumber);
                 userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accountNumber));
             }

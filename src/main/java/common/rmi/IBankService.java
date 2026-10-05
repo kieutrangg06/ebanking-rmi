@@ -18,7 +18,9 @@ public interface IBankService extends Remote {
     boolean register(String username, String password, String fullName, String accountNumber) throws RemoteException;
     void logout(String username) throws RemoteException;
     double getBalance(String accountNumber) throws RemoteException;
-    
+    Account getAccountByNumber(String accountNumber) throws RemoteException;
+    List<String> getOnlineUsers() throws RemoteException;
+
     /**
      * Chuyển tiền giữa 2 tài khoản, xử lý ACID Transaction và gọi Callback cho người nhận
      */
@@ -61,11 +63,6 @@ public interface IBankService extends Remote {
      * Lấy danh sách sổ tiết kiệm của một tài khoản
      */
     List<Saving> getSavingsByAccount(String accountNumber) throws RemoteException;
-
-    /**
-     * Lấy danh sách các tài khoản đang online (dành cho Admin Dashboard)
-     */
-    List<String> getOnlineUsers() throws RemoteException;
 
     /**
      * Admin khóa tài khoản và gọi Callback đá văng client ngay lập tức
