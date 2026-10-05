@@ -1,6 +1,8 @@
 package client.view;
 
 import client.callback.ClientCallbackImpl;
+import client.view.admin.AdminDashboardForm;
+import client.view.saving.SavingForm;
 import common.models.Account;
 import common.models.Bill;
 import common.models.Saving;
@@ -17,13 +19,14 @@ public class DashboardForm extends JFrame {
     private final IBankService bankService;
     private final Account currentAccount;
     private JLabel lblBalance;
+    private SavingForm savingForm;
 
     public DashboardForm(IBankService bankService, Account account) {
         this.bankService = bankService;
         this.currentAccount = account;
 
         setTitle("e-Banking RMI - Xin chào: " + account.getFullName() + " (STK: " + account.getAccountNumber() + ")");
-        setSize(750, 520);
+        setSize(800, 560);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
@@ -38,6 +41,17 @@ public class DashboardForm extends JFrame {
 
         topPanel.add(lblUser);
         topPanel.add(lblBalance);
+
+        if ("admin".equalsIgnoreCase(account.getUsername()) || "9999".equals(account.getAccountNumber())) {
+            JButton btnAdmin = new JButton("🛡️ Admin Dashboard");
+            btnAdmin.setBackground(new Color(231, 76, 60));
+            btnAdmin.setForeground(Color.WHITE);
+            btnAdmin.setFont(new Font("Arial", Font.BOLD, 12));
+            btnAdmin.setFocusPainted(false);
+            btnAdmin.addActionListener(e -> new AdminDashboardForm(bankService, account).setVisible(true));
+            topPanel.add(btnAdmin);
+        }
+
         add(topPanel, BorderLayout.NORTH);
 
         // Tab chứa các phân hệ của 3 thành viên
@@ -54,6 +68,9 @@ public class DashboardForm extends JFrame {
             double bal = bankService.getBalance(currentAccount.getAccountNumber());
             currentAccount.setBalance(bal);
             lblBalance.setText("Số Dư: " + String.format("%,.0f VNĐ", bal));
+            if (savingForm != null) {
+                savingForm.loadSavingsData();
+            }
         } catch (RemoteException e) {
             e.printStackTrace();
         }
@@ -163,80 +180,31 @@ public class DashboardForm extends JFrame {
 
     // --- TAB 3: NGƯỜI 3 (TIẾT KIỆM & QUẢN TRỊ ADMIN) ---
     private JPanel createSavingAndAdminPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 1, 10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JPanel container = new JPanel(new BorderLayout(8, 8));
 
-        // Khối 1: Gửi tiết kiệm
-        JPanel savingBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-        savingBox.setBorder(BorderFactory.createTitledBorder("Mở Sổ Tiết Kiệm Nhanh"));
-        JTextField txtSavAmount = new JTextField("500000", 8);
-        JButton btnOpenSaving = new JButton("Gửi Tiết Kiệm (Lãi 5%/chu kỳ)");
-        JButton btnCheckSavings = new JButton("Xem Sổ Hiện Có");
+        // Nhúng SavingForm (Mở sổ, theo dõi tiền lãi tự động nhảy, tất toán)
+        savingForm = new SavingForm(bankService, currentAccount, this::updateBalanceLabel);
+        container.add(savingForm, BorderLayout.CENTER);
 
-        savingBox.add(new JLabel("Tiền gửi:"));
-        savingBox.add(txtSavAmount);
-        savingBox.add(btnOpenSaving);
-        savingBox.add(btnCheckSavings);
+        // Thanh công cụ mở Admin Dashboard chuyên nghiệp
+        JPanel adminBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 15, 8));
+        adminBar.setBackground(new Color(235, 240, 248));
+        adminBar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 210, 225)));
 
-        btnOpenSaving.addActionListener(e -> {
-            try {
-                double amt = Double.parseDouble(txtSavAmount.getText().trim());
-                boolean ok = bankService.openSaving(currentAccount.getAccountNumber(), amt, 5.0, 15);
-                if (ok) {
-                    JOptionPane.showMessageDialog(this, "Mở sổ thành công! Lãi sẽ được cộng tự động mỗi 15 giây.");
-                    updateBalanceLabel();
-                } else {
-                    JOptionPane.showMessageDialog(this, "Số dư không đủ!");
-                }
-            } catch (Exception ex) { ex.printStackTrace(); }
-        });
+        JLabel lblAdminHint = new JLabel("🛡️ Quyền quản trị & giám sát hệ thống:");
+        lblAdminHint.setFont(new Font("Arial", Font.ITALIC, 12));
 
-        btnCheckSavings.addActionListener(e -> {
-            try {
-                List<Saving> list = bankService.getSavingsByAccount(currentAccount.getAccountNumber());
-                StringBuilder sb = new StringBuilder("DANH SÁCH SỔ TIẾT KIỆM:\n");
-                for (Saving s : list) {
-                    sb.append("Sổ #").append(s.getId()).append(" | Gốc: ").append(String.format("%,.0f", s.getDepositAmount()))
-                      .append(" | Lãi tích luỹ: ").append(String.format("%,.0f", s.getAccumulatedInterest()))
-                      .append(" | TT: ").append(s.getStatus()).append("\n");
-                }
-                JOptionPane.showMessageDialog(this, sb.toString());
-            } catch (RemoteException ex) { ex.printStackTrace(); }
-        });
+        JButton btnOpenAdmin = new JButton("Mở Bảng Điều Khiển Admin (Giám sát & Kick)");
+        btnOpenAdmin.setBackground(new Color(41, 128, 185));
+        btnOpenAdmin.setForeground(Color.WHITE);
+        btnOpenAdmin.setFont(new Font("Arial", Font.BOLD, 12));
+        btnOpenAdmin.setFocusPainted(false);
+        btnOpenAdmin.addActionListener(e -> new AdminDashboardForm(bankService, currentAccount).setVisible(true));
 
-        // Khối 2: Giám sát Admin
-        JPanel adminBox = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
-        adminBox.setBorder(BorderFactory.createTitledBorder("Admin / Giám Sát Kết Nối Mạng"));
-        JButton btnViewOnline = new JButton("Quét User Online");
-        JTextField txtLockAcc = new JTextField(6);
-        JButton btnLock = new JButton("Khóa & Kick Tài Khoản");
+        adminBar.add(lblAdminHint);
+        adminBar.add(btnOpenAdmin);
+        container.add(adminBar, BorderLayout.SOUTH);
 
-        adminBox.add(btnViewOnline);
-        adminBox.add(new JLabel("STK cần khóa:"));
-        adminBox.add(txtLockAcc);
-        adminBox.add(btnLock);
-
-        btnViewOnline.addActionListener(e -> {
-            try {
-                List<String> onlines = bankService.getOnlineUsers();
-                JOptionPane.showMessageDialog(this, "Các tài khoản đang online:\n" + String.join(", ", onlines));
-            } catch (RemoteException ex) { ex.printStackTrace(); }
-        });
-
-        btnLock.addActionListener(e -> {
-            try {
-                String targetAcc = txtLockAcc.getText().trim();
-                boolean ok = bankService.lockAccount(targetAcc, "Phat hien nghi van gian lan");
-                if (ok) {
-                    JOptionPane.showMessageDialog(this, "Đã khóa và ngắt kết nối tài khoản " + targetAcc);
-                } else {
-                    JOptionPane.showMessageDialog(this, "Khóa thất bại hoặc tài khoản không tồn tại!");
-                }
-            } catch (RemoteException ex) { ex.printStackTrace(); }
-        });
-
-        panel.add(savingBox);
-        panel.add(adminBox);
-        return panel;
+        return container;
     }
 }

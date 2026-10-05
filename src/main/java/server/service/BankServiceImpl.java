@@ -6,6 +6,7 @@ import common.models.Saving;
 import common.models.Transaction;
 import common.rmi.IBankService;
 import common.rmi.IClientCallback;
+import server.dao.SavingDAO;
 import server.db.DatabaseConnection;
 
 import java.rmi.RemoteException;
@@ -15,9 +16,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 public class BankServiceImpl extends UnicastRemoteObject implements IBankService {
     private static final long serialVersionUID = 1L;
@@ -29,13 +27,15 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     // Map phụ lưu username -> accountNumber để tiện tra cứu phiên
     private final ConcurrentHashMap<String, String> userSessionMap = new ConcurrentHashMap<>();
 
-    // Scheduled Thread Pool để Người 3 chạy tiến trình tính lãi ngầm
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    // DAO và Tiến trình nền tính lãi của Người 3
+    private final SavingDAO savingDAO = new SavingDAO();
+    private final InterestCalculatorTask interestCalculatorTask;
 
     public BankServiceImpl() throws RemoteException {
         super();
         // Khởi động tiến trình quét sinh lãi định kỳ tự động của Người 3
-        startInterestCalculatorTask();
+        this.interestCalculatorTask = new InterestCalculatorTask(savingDAO, this::triggerCallback);
+        this.interestCalculatorTask.start(10, 15);
     }
 
     // =========================================================================
@@ -69,7 +69,9 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                 );
 
                 // Đăng ký Callback lắng nghe biến động số dư
-                onlineClients.put(acc.getAccountNumber(), callback);
+                if (callback != null) {
+                    onlineClients.put(acc.getAccountNumber(), callback);
+                }
                 userSessionMap.put(username, acc.getAccountNumber());
                 System.out.println(">> [ONLINE] User: " + username + " (STK: " + acc.getAccountNumber() + ")");
                 return acc;
@@ -318,129 +320,56 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public synchronized boolean openSaving(String accountNumber, double amount, double interestRate, int termSeconds) throws RemoteException {
-        Connection conn = null;
+        if (accountNumber == null || accountNumber.trim().isEmpty() || amount <= 0) {
+            return false;
+        }
         try {
-            conn = DatabaseConnection.getConnection();
-            conn.setAutoCommit(false);
-
-            // Trừ tiền tài khoản thanh toán
-            String deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ? AND balance >= ?";
-            try (PreparedStatement ps = conn.prepareStatement(deductSql)) {
-                ps.setDouble(1, amount);
-                ps.setString(2, accountNumber);
-                ps.setDouble(3, amount);
-                if (ps.executeUpdate() == 0) {
-                    conn.rollback();
-                    return false;
-                }
+            boolean success = savingDAO.openSaving(accountNumber.trim(), amount, interestRate, termSeconds);
+            if (success) {
+                triggerCallback(accountNumber.trim(), "Mở sổ tiết kiệm thành công! Số tiền gửi: " +
+                        String.format("%,.0f VNĐ", amount) + " (Lãi suất: " + interestRate + "%/kỳ " + termSeconds + "s)");
+                return true;
             }
-
-            // Mở sổ tiết kiệm
-            String addSavingSql = "INSERT INTO savings (account_number, deposit_amount, interest_rate, term_period, status) VALUES (?, ?, ?, ?, 'ACTIVE')";
-            try (PreparedStatement ps = conn.prepareStatement(addSavingSql)) {
-                ps.setString(1, accountNumber);
-                ps.setDouble(2, amount);
-                ps.setDouble(3, interestRate);
-                ps.setInt(4, termSeconds);
-                ps.executeUpdate();
-            }
-
-            conn.commit();
-            conn.setAutoCommit(true);
-            return true;
+            return false;
         } catch (SQLException e) {
-            if (conn != null) {
-                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            }
+            System.err.println("Lỗi mở sổ tiết kiệm: " + e.getMessage());
             e.printStackTrace();
             return false;
-        } finally {
-            if (conn != null) {
-                try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-            }
         }
     }
 
     @Override
     public synchronized boolean settleSaving(int savingId) throws RemoteException {
-        Connection conn = null;
         try {
-            conn = DatabaseConnection.getConnection();
-            conn.setAutoCommit(false);
-
-            String querySql = "SELECT * FROM savings WHERE id = ? AND status = 'ACTIVE' FOR UPDATE";
-            String accNum = "";
-            double totalReturn = 0.0;
-
-            try (PreparedStatement ps = conn.prepareStatement(querySql)) {
-                ps.setInt(1, savingId);
-                ResultSet rs = ps.executeQuery();
-                if (!rs.next()) {
-                    conn.rollback();
-                    return false;
-                }
-                accNum = rs.getString("account_number");
-                totalReturn = rs.getDouble("deposit_amount") + rs.getDouble("accumulated_interest");
+            SavingDAO.SettleResult result = savingDAO.settleSaving(savingId);
+            if (result.isSuccess()) {
+                String accNum = result.getAccountNumber();
+                double total = result.getTotalRefund();
+                triggerCallback(accNum, "Sổ tiết kiệm #" + savingId + " đã tất toán thành công. +" +
+                        String.format("%,.0f VNĐ", total) + " (Gốc: " + String.format("%,.0f", result.getPrincipal()) +
+                        " + Lãi: " + String.format("%,.0f", result.getInterest()) + ") đã được chuyển về tài khoản.");
+                return true;
             }
-
-            // Hoàn tiền về tài khoản chính
-            String refundSql = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
-            try (PreparedStatement ps = conn.prepareStatement(refundSql)) {
-                ps.setDouble(1, totalReturn);
-                ps.setString(2, accNum);
-                ps.executeUpdate();
-            }
-
-            // Đóng sổ
-            String closeSavingSql = "UPDATE savings SET status = 'CLOSED' WHERE id = ?";
-            try (PreparedStatement ps = conn.prepareStatement(closeSavingSql)) {
-                ps.setInt(1, savingId);
-                ps.executeUpdate();
-            }
-
-            conn.commit();
-            conn.setAutoCommit(true);
-
-            // Bắn callback báo hoàn tất sổ
-            triggerCallback(accNum, "Sổ tiết kiệm #" + savingId + " đã tất toán. +" + totalReturn + " VNĐ về tài khoản.");
-            return true;
+            return false;
         } catch (SQLException e) {
-            if (conn != null) {
-                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
-            }
+            System.err.println("Lỗi tất toán sổ tiết kiệm: " + e.getMessage());
             e.printStackTrace();
             return false;
-        } finally {
-            if (conn != null) {
-                try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-            }
         }
     }
 
     @Override
     public List<Saving> getSavingsByAccount(String accountNumber) throws RemoteException {
-        List<Saving> list = new ArrayList<>();
-        String sql = "SELECT * FROM savings WHERE account_number = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                list.add(new Saving(
-                        rs.getInt("id"),
-                        rs.getString("account_number"),
-                        rs.getDouble("deposit_amount"),
-                        rs.getDouble("interest_rate"),
-                        rs.getInt("term_period"),
-                        rs.getDouble("accumulated_interest"),
-                        rs.getString("status"),
-                        rs.getTimestamp("created_at")
-                ));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
+        if (accountNumber == null || accountNumber.trim().isEmpty()) {
+            return new ArrayList<>();
         }
-        return list;
+        try {
+            return savingDAO.getSavingsByAccount(accountNumber.trim());
+        } catch (SQLException e) {
+            System.err.println("Lỗi lấy danh sách sổ tiết kiệm: " + e.getMessage());
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
     }
 
     @Override
@@ -450,33 +379,99 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     @Override
     public synchronized boolean lockAccount(String accountNumber, String reason) throws RemoteException {
-        String sql = "UPDATE accounts SET status = 'LOCKED' WHERE account_number = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            int rows = ps.executeUpdate();
-            if (rows > 0) {
-                // Nếu tài khoản đang online, đá văng ngay lập tức
-                IClientCallback cb = onlineClients.remove(accountNumber);
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        try {
+            boolean ok = savingDAO.lockAccount(accNum);
+            if (ok) {
+                // Đá văng client ngay lập tức nếu đang online (Remote Revocation)
+                IClientCallback cb = onlineClients.remove(accNum);
+                userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accNum));
                 if (cb != null) {
                     try {
-                        cb.forceLogout("Tài khoản của bạn đã bị khóa bởi Quản trị viên. Lý do: " + reason);
+                        cb.forceLogout("Tài khoản của bạn đã bị KHÓA bởi Quản trị viên. Lý do: " +
+                                (reason != null && !reason.trim().isEmpty() ? reason.trim() : "Vi phạm chính sách ngân hàng"));
                     } catch (RemoteException ignored) {}
                 }
+                System.out.println(">> [ADMIN ACTION] Đã KHÓA tài khoản STK: " + accNum + " (Lý do: " + reason + ")");
                 return true;
             }
         } catch (SQLException e) {
+            System.err.println("Lỗi khóa tài khoản: " + e.getMessage());
             e.printStackTrace();
         }
         return false;
     }
 
+    @Override
+    public synchronized boolean kickUser(String accountNumber, String reason) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        IClientCallback cb = onlineClients.remove(accNum);
+        userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accNum));
+        if (cb != null) {
+            try {
+                cb.forceLogout("Bạn đã bị Quản trị viên ngắt kết nối (KICK). Lý do: " +
+                        (reason != null && !reason.trim().isEmpty() ? reason.trim() : "Yêu cầu từ quản trị viên"));
+                System.out.println(">> [ADMIN ACTION] Đã KICK phiên online của STK: " + accNum + " (Lý do: " + reason + ")");
+                return true;
+            } catch (RemoteException e) {
+                System.err.println("Client đã mất kết nối trước khi nhận lệnh kick: " + accNum);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public synchronized boolean unlockAccount(String accountNumber) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        try {
+            boolean ok = savingDAO.unlockAccount(accountNumber.trim());
+            if (ok) {
+                System.out.println(">> [ADMIN ACTION] Đã MỞ KHÓA tài khoản STK: " + accountNumber.trim());
+            }
+            return ok;
+        } catch (SQLException e) {
+            System.err.println("Lỗi mở khóa tài khoản: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    @Override
+    public List<Account> getAllAccounts() throws RemoteException {
+        try {
+            return savingDAO.getAllAccounts();
+        } catch (SQLException e) {
+            System.err.println("Lỗi lấy danh sách tài khoản: " + e.getMessage());
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public double getTotalSystemBalance() throws RemoteException {
+        try {
+            return savingDAO.getTotalSystemBalance();
+        } catch (SQLException e) {
+            System.err.println("Lỗi tính tổng tiền hệ thống: " + e.getMessage());
+            e.printStackTrace();
+            return 0.0;
+        }
+    }
+
+    public InterestCalculatorTask getInterestCalculatorTask() {
+        return interestCalculatorTask;
+    }
+
     // =========================================================================
-    // CÁC HÀM BỔ TRỢ HỆ THỐNG: TIẾN TRÌNH NỀN & BẢO VỆ CALLBACK CHẾT
+    // CÁC HÀM BỔ TRỢ HỆ THỐNG: BẢO VỆ CALLBACK CHẾT (DEAD REFERENCE CLEANUP)
     // =========================================================================
 
     /**
      * Bắn Callback an toàn: Bắt lỗi RemoteException và dọn dẹp các máy khách bị rớt mạng đột ngột (Dead Reference)
+     * Đảm bảo Server KHÔNG bị treo luồng (hang thread) hay crash Server.
      */
     private void triggerCallback(String accountNumber, String message) {
         IClientCallback cb = onlineClients.get(accountNumber);
@@ -486,46 +481,10 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                 cb.notifyBalanceChange(message, latestBal);
             } catch (RemoteException e) {
                 // Client đã ngắt kết nối bất thường (rút dây mạng, tắt app ngang)
-                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang xóa...");
+                System.err.println("Gặp Dead Callback Reference tại STK: " + accountNumber + ". Đang xóa session...");
                 onlineClients.remove(accountNumber);
+                userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accountNumber));
             }
         }
-    }
-
-    /**
-     * Tiến trình nền (Multi-threading): Tự động tính lãi cho các sổ tiết kiệm ACTIVE
-     */
-    private void startInterestCalculatorTask() {
-        // Quét mỗi 10 giây một lần để dễ quan sát khi demo
-        scheduler.scheduleAtFixedRate(() -> {
-            String sql = "SELECT * FROM savings WHERE status = 'ACTIVE'";
-            try (Connection conn = DatabaseConnection.getConnection();
-                 PreparedStatement ps = conn.prepareStatement(sql);
-                 ResultSet rs = ps.executeQuery()) {
-
-                while (rs.next()) {
-                    int id = rs.getInt("id");
-                    String accNum = rs.getString("account_number");
-                    double deposit = rs.getDouble("deposit_amount");
-                    double rate = rs.getDouble("interest_rate");
-
-                    // Giả lập tính lãi chu kỳ ngắn: tiền lãi = Tiền gửi * (lãi suất / 100)
-                    double addedInterest = deposit * (rate / 100.0);
-
-                    // Cập nhật lãi tích lũy vào DB
-                    String updateSql = "UPDATE savings SET accumulated_interest = accumulated_interest + ? WHERE id = ?";
-                    try (PreparedStatement updatePs = conn.prepareStatement(updateSql)) {
-                        updatePs.setDouble(1, addedInterest);
-                        updatePs.setInt(2, id);
-                        updatePs.executeUpdate();
-                    }
-
-                    // Thông báo biến động lãi suất về máy khách nếu đang online
-                    triggerCallback(accNum, "Tiền lãi từ Sổ #" + id + " vừa phát sinh +" + addedInterest + " VNĐ!");
-                }
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-        }, 10, 20, TimeUnit.SECONDS);
     }
 }

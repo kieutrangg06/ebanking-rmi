@@ -71,4 +71,24 @@ public interface IBankService extends Remote {
      * Admin khóa tài khoản và gọi Callback đá văng client ngay lập tức
      */
     boolean lockAccount(String accountNumber, String reason) throws RemoteException;
+
+    /**
+     * Admin đá văng phiên làm việc của client (ngắt kết nối cưỡng chế)
+     */
+    boolean kickUser(String accountNumber, String reason) throws RemoteException;
+
+    /**
+     * Admin mở khóa tài khoản
+     */
+    boolean unlockAccount(String accountNumber) throws RemoteException;
+
+    /**
+     * Lấy danh sách toàn bộ tài khoản trong hệ thống (dành cho Admin quản lý)
+     */
+    List<Account> getAllAccounts() throws RemoteException;
+
+    /**
+     * Lấy tổng tiền toàn hệ thống (tiền gửi tài khoản + tiền tiết kiệm)
+     */
+    double getTotalSystemBalance() throws RemoteException;
 }

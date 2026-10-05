@@ -60,6 +60,11 @@ public class ClientMain {
                         loginFrame.dispose();
                         dashboardHolder[0] = new DashboardForm(bankService, acc);
                         dashboardHolder[0].setVisible(true);
+
+                        // Nếu là tài khoản Admin, mở thêm AdminDashboardForm
+                        if ("admin".equalsIgnoreCase(acc.getUsername()) || "9999".equals(acc.getAccountNumber())) {
+                            new client.view.admin.AdminDashboardForm(bankService, acc).setVisible(true);
+                        }
                     } else {
                         JOptionPane.showMessageDialog(loginFrame, "Sai thông tin hoặc tài khoản đang bị KHÓA!", "Lỗi Đăng Nhập", JOptionPane.ERROR_MESSAGE);
                     }
