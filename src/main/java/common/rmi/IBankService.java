@@ -1,9 +1,12 @@
 package common.rmi;
 
 import common.models.Account;
+import common.models.Bill;
+import common.models.Transaction;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.Date;
 import java.util.List;
 
 public interface IBankService extends Remote {
@@ -25,4 +28,27 @@ public interface IBankService extends Remote {
      * Chuyển tiền giữa 2 tài khoản, xử lý ACID Transaction và gọi Callback cho người nhận
      */
     boolean transfer(String fromAccountNumber, String toAccountNumber, double amount, String description) throws RemoteException;
+
+    // ==========================================
+    // NGƯỜI 2: HÓA ĐƠN & SAO KÊ GIAO DỊCH
+    // ==========================================
+    /**
+     * Tra cứu hóa đơn theo mã (EVN_HANOI_01, WA_DANANG_02, ...)
+     */
+    Bill queryBill(String billCode) throws RemoteException;
+
+    /**
+     * Thanh toán hóa đơn (trừ tiền tài khoản, gạch nợ hóa đơn, ghi lịch sử giao dịch)
+     */
+    boolean payBill(String accountNumber, String billCode) throws RemoteException;
+
+    /**
+     * Lấy toàn bộ lịch sử biến động số dư của 1 tài khoản
+     */
+    List<Transaction> getTransactionHistory(String accountNumber) throws RemoteException;
+
+    /**
+     * Lọc lịch sử biến động số dư của tài khoản theo khoảng ngày (fromDate -> toDate)
+     */
+    List<Transaction> getTransactionHistoryFiltered(String accountNumber, Date fromDate, Date toDate) throws RemoteException;
 }

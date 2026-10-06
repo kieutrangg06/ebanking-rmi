@@ -1,6 +1,8 @@
 package client.view;
 
 import client.view.auth.LoginForm;
+import client.view.bill.BillPayForm;
+import client.view.bill.TransactionHistoryForm;
 import client.view.transfer.TransferForm;
 import client.view.ui.ModernButton;
 import client.view.ui.UITheme;
@@ -24,8 +26,8 @@ public class DashboardForm extends JFrame {
         this.currentAccount = account;
 
         setTitle("e-Banking RMI - Không Gian Giao Dịch: " + account.getFullName() + " (STK: " + account.getAccountNumber() + ")");
-        setSize(960, 720);
-        setMinimumSize(new Dimension(850, 600));
+        setSize(1060, 740);
+        setMinimumSize(new Dimension(960, 620));
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         setLocationRelativeTo(null);
 
@@ -102,6 +104,28 @@ public class DashboardForm extends JFrame {
         lblBalance.setOpaque(true);
         lblBalance.setBorder(BorderFactory.createEmptyBorder(6, 14, 6, 14));
         rightActions.add(lblBalance);
+
+        // Nút Người 2: Thanh toán hóa đơn trực tuyến
+        ModernButton btnBill = new ModernButton("💳 Thanh Toán Hóa Đơn", ModernButton.Style.OUTLINE);
+        btnBill.setFont(UITheme.FONT_SMALL_BOLD);
+        btnBill.setCornerRadius(8);
+        btnBill.setMargin(new Insets(6, 12, 6, 12));
+        btnBill.addActionListener(e -> {
+            BillPayForm form = new BillPayForm(bankService, currentAccount, this::updateBalanceLabel);
+            form.setVisible(true);
+        });
+        rightActions.add(btnBill);
+
+        // Nút Người 2: Lịch sử giao dịch & xuất sao kê CSV
+        ModernButton btnHistory = new ModernButton("📜 Lịch Sử Giao Dịch", ModernButton.Style.OUTLINE);
+        btnHistory.setFont(UITheme.FONT_SMALL_BOLD);
+        btnHistory.setCornerRadius(8);
+        btnHistory.setMargin(new Insets(6, 12, 6, 12));
+        btnHistory.addActionListener(e -> {
+            TransactionHistoryForm form = new TransactionHistoryForm(bankService, currentAccount);
+            form.setVisible(true);
+        });
+        rightActions.add(btnHistory);
 
         ModernButton btnLogout = new ModernButton("Đăng Xuất", ModernButton.Style.DANGER);
         btnLogout.setFont(UITheme.FONT_SMALL_BOLD);
