@@ -2,11 +2,13 @@ package server.service;
 
 import common.models.Account;
 import common.models.Bill;
+import common.models.Saving;
 import common.models.Transaction;
 import common.rmi.IBankService;
 import common.rmi.IClientCallback;
 import server.dao.AccountDAO;
 import server.dao.BillDAO;
+import server.dao.SavingDAO;
 import server.dao.TransactionDAO;
 import server.db.DatabaseConnection;
 
@@ -35,8 +37,15 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     // Map phụ lưu username -> accountNumber để tiện tra cứu phiên
     private final ConcurrentHashMap<String, String> userSessionMap = new ConcurrentHashMap<>();
 
+    // DAO và Tiến trình nền tính lãi của Người 3
+    private final SavingDAO savingDAO = new SavingDAO();
+    private final InterestCalculatorTask interestCalculatorTask;
+
     public BankServiceImpl() throws RemoteException {
         super();
+        // Khởi động tiến trình quét sinh lãi định kỳ tự động của Người 3
+        this.interestCalculatorTask = new InterestCalculatorTask(savingDAO, this::triggerCallback);
+        this.interestCalculatorTask.start(10, 15);
     }
 
     // =========================================================================
@@ -255,7 +264,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
                         acc.getBalance(), bill.getAmount()));
             }
 
-            // BƯỚC 3: Trừ tiền tài khoản người thanh toán (ACID deduct với balance >= amount)
+            // BƯỚC 3: Trừ tiền tài khoản người thanh toán (ACID deduct)
             boolean deducted = accountDAO.deductBalance(conn, accountNumber, bill.getAmount());
             if (!deducted) {
                 conn.rollback();
@@ -329,6 +338,156 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     public List<Transaction> getTransactionHistoryFiltered(String accountNumber, Date fromDate, Date toDate) throws RemoteException {
         return transactionDAO.getTransactionHistoryFiltered(accountNumber, fromDate, toDate);
     }
+
+    // =========================================================================
+    // PHẦN VIỆC CỦA NGƯỜI 3: TIẾT KIỆM TỰ ĐỘNG, ADMIN MONITORING & FORCE LOGOUT
+    // =========================================================================
+
+    @Override
+    public synchronized boolean openSaving(String accountNumber, double amount, double interestRate, int termSeconds) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty() || amount <= 0) {
+            return false;
+        }
+        try {
+            boolean success = savingDAO.openSaving(accountNumber.trim(), amount, interestRate, termSeconds);
+            if (success) {
+                triggerCallback(accountNumber.trim(), "Mở sổ tiết kiệm thành công! Số tiền gửi: " +
+                        String.format("%,.0f VNĐ", amount) + " (Lãi suất: " + interestRate + "%/kỳ " + termSeconds + "s)");
+                return true;
+            }
+            return false;
+        } catch (SQLException e) {
+            System.err.println("Lỗi mở sổ tiết kiệm: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    @Override
+    public synchronized boolean settleSaving(int savingId) throws RemoteException {
+        try {
+            SavingDAO.SettleResult result = savingDAO.settleSaving(savingId);
+            if (result.isSuccess()) {
+                String accNum = result.getAccountNumber();
+                double total = result.getTotalRefund();
+                triggerCallback(accNum, "Sổ tiết kiệm #" + savingId + " đã tất toán thành công. +" +
+                        String.format("%,.0f VNĐ", total) + " (Gốc: " + String.format("%,.0f", result.getPrincipal()) +
+                        " + Lãi: " + String.format("%,.0f", result.getInterest()) + ") đã được chuyển về tài khoản.");
+                return true;
+            }
+            return false;
+        } catch (SQLException e) {
+            System.err.println("Lỗi tất toán sổ tiết kiệm: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    @Override
+    public List<Saving> getSavingsByAccount(String accountNumber) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        try {
+            return savingDAO.getSavingsByAccount(accountNumber.trim());
+        } catch (SQLException e) {
+            System.err.println("Lỗi lấy danh sách sổ tiết kiệm: " + e.getMessage());
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public synchronized boolean lockAccount(String accountNumber, String reason) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        try {
+            boolean ok = savingDAO.lockAccount(accNum);
+            if (ok) {
+                // Đá văng client ngay lập tức nếu đang online (Remote Revocation)
+                IClientCallback cb = onlineClients.remove(accNum);
+                userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accNum));
+                if (cb != null) {
+                    try {
+                        cb.forceLogout("Tài khoản của bạn đã bị KHÓA bởi Quản trị viên. Lý do: " +
+                                (reason != null && !reason.trim().isEmpty() ? reason.trim() : "Vi phạm chính sách ngân hàng"));
+                    } catch (RemoteException ignored) {}
+                }
+                System.out.println(">> [ADMIN ACTION] Đã KHÓA tài khoản STK: " + accNum + " (Lý do: " + reason + ")");
+                return true;
+            }
+        } catch (SQLException e) {
+            System.err.println("Lỗi khóa tài khoản: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    @Override
+    public synchronized boolean kickUser(String accountNumber, String reason) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        IClientCallback cb = onlineClients.remove(accNum);
+        userSessionMap.entrySet().removeIf(entry -> entry.getValue().equals(accNum));
+        if (cb != null) {
+            try {
+                cb.forceLogout("Bạn đã bị Quản trị viên ngắt kết nối (KICK). Lý do: " +
+                        (reason != null && !reason.trim().isEmpty() ? reason.trim() : "Yêu cầu từ quản trị viên"));
+                System.out.println(">> [ADMIN ACTION] Đã KICK phiên online của STK: " + accNum + " (Lý do: " + reason + ")");
+                return true;
+            } catch (RemoteException e) {
+                System.err.println("Client đã mất kết nối trước khi nhận lệnh kick: " + accNum);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public synchronized boolean unlockAccount(String accountNumber) throws RemoteException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        try {
+            boolean ok = savingDAO.unlockAccount(accountNumber.trim());
+            if (ok) {
+                System.out.println(">> [ADMIN ACTION] Đã MỞ KHÓA tài khoản STK: " + accountNumber.trim());
+            }
+            return ok;
+        } catch (SQLException e) {
+            System.err.println("Lỗi mở khóa tài khoản: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    @Override
+    public List<Account> getAllAccounts() throws RemoteException {
+        try {
+            return savingDAO.getAllAccounts();
+        } catch (SQLException e) {
+            System.err.println("Lỗi lấy danh sách tài khoản: " + e.getMessage());
+            e.printStackTrace();
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public double getTotalSystemBalance() throws RemoteException {
+        try {
+            return savingDAO.getTotalSystemBalance();
+        } catch (SQLException e) {
+            System.err.println("Lỗi tính tổng tiền hệ thống: " + e.getMessage());
+            e.printStackTrace();
+            return 0.0;
+        }
+    }
+
+    public InterestCalculatorTask getInterestCalculatorTask() {
+        return interestCalculatorTask;
+    }
+
+    // =========================================================================
+    // CÁC HÀM BỔ TRỢ HỆ THỐNG: BẢO VỆ CALLBACK CHẾT (DEAD REFERENCE CLEANUP)
+    // =========================================================================
 
     /**
      * Bắn Callback an toàn: Bắt lỗi RemoteException và dọn dẹp các máy khách bị rớt mạng đột ngột (Dead Reference)

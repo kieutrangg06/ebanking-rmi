@@ -279,8 +279,13 @@ public class LoginForm extends JFrame {
                         lblStatus.setText("Đăng nhập thành công!");
                         dispose();
 
-                        dashboardHolder[0] = new DashboardForm(bankService, acc);
-                        dashboardHolder[0].setVisible(true);
+                        // Phân quyền chuyên nghiệp: Admin vào AdminDashboardForm, Khách hàng vào DashboardForm
+                        if ("admin".equalsIgnoreCase(acc.getUsername()) || "9999".equals(acc.getAccountNumber())) {
+                            new client.view.admin.AdminDashboardForm(bankService, acc).setVisible(true);
+                        } else {
+                            dashboardHolder[0] = new DashboardForm(bankService, acc);
+                            dashboardHolder[0].setVisible(true);
+                        }
                     } else {
                         lblStatus.setForeground(UITheme.DANGER);
                         if (errorMsg != null) {
