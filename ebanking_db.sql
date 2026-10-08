@@ -57,6 +57,33 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Cấu trúc bảng cho bảng `bills` (Thanh toán hóa đơn điện tử - Người 2)
+--
+
+CREATE TABLE IF NOT EXISTS `bills` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `bill_code` varchar(50) NOT NULL,
+  `service_type` varchar(50) NOT NULL,
+  `customer_name` varchar(100) NOT NULL,
+  `amount` double NOT NULL,
+  `status` varchar(20) DEFAULT 'UNPAID',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `bill_code` (`bill_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dữ liệu khởi tạo cho bảng `bills`
+--
+
+INSERT INTO `bills` (`id`, `bill_code`, `service_type`, `customer_name`, `amount`, `status`) VALUES
+(1, 'EVN_HANOI_01', 'Tien Dien', 'Nguyen Van A', 350000, 'UNPAID'),
+(2, 'WA_DANANG_02', 'Tien Nuoc', 'Tran Thi B', 120000, 'UNPAID'),
+(3, 'FPT_NET_03', 'Internet FPT', 'Le Van C', 250000, 'UNPAID')
+ON DUPLICATE KEY UPDATE `service_type`=VALUES(`service_type`);
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

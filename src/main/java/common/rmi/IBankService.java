@@ -7,6 +7,7 @@ import common.models.Transaction;
 
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.util.Date;
 import java.util.List;
 
 public interface IBankService extends Remote {
@@ -26,9 +27,8 @@ public interface IBankService extends Remote {
      */
     boolean transfer(String fromAccountNumber, String toAccountNumber, double amount, String description) throws RemoteException;
 
-
     // ==========================================
-    // PHẦN VIỆC CỦA NGƯỜI 2: HÓA ĐƠN & SAO KÊ
+    // NGƯỜI 2: HÓA ĐƠN & SAO KÊ GIAO DỊCH
     // ==========================================
     /**
      * Tra cứu hóa đơn theo mã (EVN_HANOI_01, WA_DANANG_02, ...)
@@ -45,6 +45,10 @@ public interface IBankService extends Remote {
      */
     List<Transaction> getTransactionHistory(String accountNumber) throws RemoteException;
 
+    /**
+     * Lọc lịch sử biến động số dư của tài khoản theo khoảng ngày (fromDate -> toDate)
+     */
+    List<Transaction> getTransactionHistoryFiltered(String accountNumber, Date fromDate, Date toDate) throws RemoteException;
 
     // ==========================================
     // PHẦN VIỆC CỦA NGƯỜI 3: TIẾT KIỆM & QUẢN TRỊ ADMIN

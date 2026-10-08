@@ -236,4 +236,56 @@ public class AccountDAO {
             }
         }
     }
+
+    /**
+     * Lấy thông tin tài khoản và KHÓA dòng (SELECT ... FOR UPDATE) trong transaction.
+     * Sử dụng trong thanh toán hóa đơn để bảo vệ ACID.
+     */
+    public Account getAccountByNumberForUpdate(Connection conn, String accountNumber) throws SQLException {
+        if (accountNumber == null || accountNumber.trim().isEmpty()) return null;
+        String sql = "SELECT id, account_number, username, password, full_name, balance, status " +
+                     "FROM accounts WHERE account_number = ? FOR UPDATE";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, accountNumber.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new Account(
+                            rs.getInt("id"),
+                            rs.getString("account_number"),
+                            rs.getString("username"),
+                            rs.getString("password"),
+                            rs.getString("full_name"),
+                            rs.getDouble("balance"),
+                            rs.getString("status")
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Trừ tiền tài khoản an toàn với điều kiện balance >= amount.
+     */
+    public boolean deductBalance(Connection conn, String accountNumber, double amount) throws SQLException {
+        String sql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ? AND balance >= ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setDouble(1, amount);
+            ps.setString(2, accountNumber.trim());
+            ps.setDouble(3, amount);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    /**
+     * Cộng tiền tài khoản.
+     */
+    public boolean addBalance(Connection conn, String accountNumber, double amount) throws SQLException {
+        String sql = "UPDATE accounts SET balance = balance + ? WHERE account_number = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setDouble(1, amount);
+            ps.setString(2, accountNumber.trim());
+            return ps.executeUpdate() > 0;
+        }
+    }
 }

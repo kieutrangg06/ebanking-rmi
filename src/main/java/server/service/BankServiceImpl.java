@@ -7,16 +7,18 @@ import common.models.Transaction;
 import common.rmi.IBankService;
 import common.rmi.IClientCallback;
 import server.dao.AccountDAO;
+import server.dao.BillDAO;
 import server.dao.SavingDAO;
+import server.dao.TransactionDAO;
 import server.db.DatabaseConnection;
 
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,6 +27,8 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
 
     // DAO quản lý tài khoản & giao dịch lõi (Kiến trúc 3-Tier chuẩn)
     private final AccountDAO accountDAO = new AccountDAO();
+    private final BillDAO billDAO = new BillDAO();
+    private final TransactionDAO transactionDAO = new TransactionDAO();
 
     // Quản lý phiên kết nối tập trung trên Server bằng ConcurrentHashMap
     // accountNumber -> Callback
@@ -191,115 +195,148 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // PHẦN VIỆC CỦA NGƯỜI 2: HÓA ĐƠN & SAO KÊ
+    // NGƯỜI 2: THANH TOÁN HÓA ĐƠN & XUẤT SAO KÊ GIAO DỊCH (3-TIER + ACID)
     // =========================================================================
 
     @Override
     public Bill queryBill(String billCode) throws RemoteException {
-        String sql = "SELECT * FROM bills WHERE bill_code = ?";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, billCode);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return new Bill(
-                        rs.getInt("id"),
-                        rs.getString("bill_code"),
-                        rs.getString("service_type"),
-                        rs.getString("customer_name"),
-                        rs.getDouble("amount"),
-                        rs.getString("status")
-                );
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return null;
+        return billDAO.queryBill(billCode);
     }
 
     @Override
-    public synchronized boolean payBill(String accountNumber, String billCode) throws RemoteException {
-        Bill bill = queryBill(billCode);
-        if (bill == null || "PAID".equalsIgnoreCase(bill.getStatus())) {
-            return false;
+    public synchronized boolean payBill(String param1, String param2) throws RemoteException {
+        // Tự động phân định tham số (hỗ trợ cả payBill(acc, billCode) và payBill(billCode, acc)):
+        String accountNumber;
+        String billCode;
+
+        Bill checkBillParam2 = billDAO.queryBill(param2);
+        if (checkBillParam2 != null) {
+            accountNumber = param1;
+            billCode = param2;
+        } else {
+            Bill checkBillParam1 = billDAO.queryBill(param1);
+            if (checkBillParam1 != null) {
+                billCode = param1;
+                accountNumber = param2;
+            } else {
+                accountNumber = param1;
+                billCode = param2;
+            }
+        }
+
+        if (accountNumber == null || accountNumber.trim().isEmpty() ||
+            billCode == null || billCode.trim().isEmpty()) {
+            throw new RemoteException("Thông tin số tài khoản hoặc mã hóa đơn không hợp lệ!");
         }
 
         Connection conn = null;
         try {
             conn = DatabaseConnection.getConnection();
-            conn.setAutoCommit(false);
+            conn.setAutoCommit(false); // BẮT ĐẦU JDBC TRANSACTION (ACID)
 
-            // 1. Kiểm tra và trừ tiền tài khoản
-            String deductSql = "UPDATE accounts SET balance = balance - ? WHERE account_number = ? AND balance >= ?";
-            try (PreparedStatement ps = conn.prepareStatement(deductSql)) {
-                ps.setDouble(1, bill.getAmount());
-                ps.setString(2, accountNumber);
-                ps.setDouble(3, bill.getAmount());
-                if (ps.executeUpdate() == 0) {
-                    conn.rollback();
-                    return false; // Số dư không đủ
-                }
+            // BƯỚC 1: Khóa dòng hóa đơn chống Double Payment (Dùng SELECT ... FOR UPDATE)
+            Bill bill = billDAO.queryBillForUpdate(conn, billCode);
+            if (bill == null) {
+                conn.rollback();
+                throw new RemoteException("Không tìm thấy hóa đơn có mã: " + billCode);
             }
 
-            // 2. Đánh dấu hóa đơn thành PAID
-            String updateBillSql = "UPDATE bills SET status = 'PAID' WHERE bill_code = ?";
-            try (PreparedStatement ps = conn.prepareStatement(updateBillSql)) {
-                ps.setString(1, billCode);
-                ps.executeUpdate();
+            if ("PAID".equalsIgnoreCase(bill.getStatus())) {
+                conn.rollback();
+                throw new RemoteException("Hóa đơn đã được thanh toán trước đó (Mã HĐ: " + billCode + ")!");
             }
 
-            // 3. Ghi nhận giao dịch
-            String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
-            try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
-                psTx.setString(1, "THANH_TOAN_HOA_DON");
-                psTx.setString(2, accountNumber);
-                psTx.setString(3, billCode);
-                psTx.setDouble(4, bill.getAmount());
-                psTx.setString(5, "Thanh toan hoa don: " + bill.getServiceType() + " (" + bill.getCustomerName() + ")");
-                psTx.executeUpdate();
+            // BƯỚC 2: Kiểm tra tài khoản người thanh toán (tồn tại, không bị khóa, số dư >= số tiền bill)
+            Account acc = accountDAO.getAccountByNumberForUpdate(conn, accountNumber);
+            if (acc == null) {
+                conn.rollback();
+                throw new RemoteException("Tài khoản người thanh toán không tồn tại: " + accountNumber);
             }
 
+            if ("LOCKED".equalsIgnoreCase(acc.getStatus())) {
+                conn.rollback();
+                throw new RemoteException("Tài khoản đang bị khóa, không thể thực hiện giao dịch thanh toán!");
+            }
+
+            if (acc.getBalance() < bill.getAmount()) {
+                conn.rollback();
+                throw new RemoteException(String.format("Số dư tài khoản không đủ để thanh toán (Hiện có: %,.0f VNĐ, Cần: %,.0f VNĐ)!",
+                        acc.getBalance(), bill.getAmount()));
+            }
+
+            // BƯỚC 3: Trừ tiền tài khoản người thanh toán (ACID deduct)
+            boolean deducted = accountDAO.deductBalance(conn, accountNumber, bill.getAmount());
+            if (!deducted) {
+                conn.rollback();
+                throw new RemoteException("Trừ tiền tài khoản thất bại!");
+            }
+
+            // BƯỚC 4: Cập nhật trạng thái hóa đơn: "UNPAID" -> "PAID"
+            boolean billUpdated = billDAO.updateBillStatus(conn, billCode, "PAID");
+            if (!billUpdated) {
+                conn.rollback();
+                throw new RemoteException("Cập nhật trạng thái hóa đơn thất bại!");
+            }
+
+            // BƯỚC 5: Thêm bản ghi vào bảng transactions
+            String desc = "Thanh toan hoa don: " + bill.getServiceType() + " (" + bill.getCustomerName() + ") - Ma HD: " + billCode;
+            Transaction tx = new Transaction(
+                    0,
+                    "THANH_TOAN_HOA_DON",
+                    accountNumber,
+                    billCode,
+                    bill.getAmount(),
+                    desc,
+                    new Timestamp(System.currentTimeMillis())
+            );
+            boolean txSaved = transactionDAO.insertTransaction(conn, tx);
+            if (!txSaved) {
+                conn.rollback();
+                throw new RemoteException("Ghi nhận lịch sử giao dịch thất bại!");
+            }
+
+            // CHỐT GIAO DỊCH THÀNH CÔNG (ACID COMMIT)
             conn.commit();
             conn.setAutoCommit(true);
+
+            // BẮN CALLBACK THÔNG BÁO BIẾN ĐỘNG SỐ DƯ (NẾU CLIENT ĐANG ONLINE)
+            triggerCallback(accountNumber, "Thanh toán thành công hóa đơn " + billCode + " (" + bill.getServiceType() + ") -" + String.format("%,.0f VNĐ", bill.getAmount()));
+
             return true;
 
         } catch (SQLException e) {
             if (conn != null) {
                 try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
             }
-            e.printStackTrace();
-            return false;
+            throw new RemoteException("Lỗi CSDL trong quá trình thanh toán: " + e.getMessage(), e);
+        } catch (RemoteException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            throw e;
+        } catch (Exception e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            throw new RemoteException("Thanh toán thất bại: " + e.getMessage(), e);
         } finally {
             if (conn != null) {
-                try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+                try {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                } catch (SQLException e) { e.printStackTrace(); }
             }
         }
     }
 
     @Override
     public List<Transaction> getTransactionHistory(String accountNumber) throws RemoteException {
-        List<Transaction> list = new ArrayList<>();
-        String sql = "SELECT * FROM transactions WHERE from_account = ? OR to_account = ? ORDER BY created_at DESC";
-        try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, accountNumber);
-            ps.setString(2, accountNumber);
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                list.add(new Transaction(
-                        rs.getInt("id"),
-                        rs.getString("transaction_type"),
-                        rs.getString("from_account"),
-                        rs.getString("to_account"),
-                        rs.getDouble("amount"),
-                        rs.getString("description"),
-                        rs.getTimestamp("created_at")
-                ));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return list;
+        return transactionDAO.getTransactionHistory(accountNumber);
+    }
+
+    @Override
+    public List<Transaction> getTransactionHistoryFiltered(String accountNumber, Date fromDate, Date toDate) throws RemoteException {
+        return transactionDAO.getTransactionHistoryFiltered(accountNumber, fromDate, toDate);
     }
 
     // =========================================================================

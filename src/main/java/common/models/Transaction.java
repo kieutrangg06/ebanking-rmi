@@ -13,6 +13,7 @@ public class Transaction implements Serializable {
     private double amount;
     private String description;
     private Timestamp createdAt;
+    private String status = "THÀNH CÔNG";
 
     public Transaction() {}
 
@@ -24,6 +25,12 @@ public class Transaction implements Serializable {
         this.amount = amount;
         this.description = description;
         this.createdAt = createdAt;
+        this.status = "THÀNH CÔNG";
+    }
+
+    public Transaction(int id, String transactionType, String fromAccount, String toAccount, double amount, String description, Timestamp createdAt, String status) {
+        this(id, transactionType, fromAccount, toAccount, amount, description, createdAt);
+        this.status = status;
     }
 
     public int getId() { return id; }
@@ -46,4 +53,7 @@ public class Transaction implements Serializable {
 
     public Timestamp getCreatedAt() { return createdAt; }
     public void setCreatedAt(Timestamp createdAt) { this.createdAt = createdAt; }
+
+    public String getStatus() { return status != null ? status : "THÀNH CÔNG"; }
+    public void setStatus(String status) { this.status = status; }
 }
