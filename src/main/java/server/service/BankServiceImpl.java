@@ -6,6 +6,7 @@ import common.models.Saving;
 import common.models.Transaction;
 import common.rmi.IBankService;
 import common.rmi.IClientCallback;
+import common.rmi.RmiConfig;
 import server.dao.AccountDAO;
 import server.dao.BillDAO;
 import server.dao.SavingDAO;
@@ -41,11 +42,18 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     private final SavingDAO savingDAO = new SavingDAO();
     private final InterestCalculatorTask interestCalculatorTask;
 
-    public BankServiceImpl() throws RemoteException {
-        super();
+    /**
+     * Khởi tạo BankServiceImpl với cổng CỐ ĐỊNH để mở tường lửa dễ dàng
+     */
+    public BankServiceImpl(int exportPort) throws RemoteException {
+        super(RmiConfig.allocateSafePort(exportPort));
         // Khởi động tiến trình quét sinh lãi định kỳ tự động của Người 3
         this.interestCalculatorTask = new InterestCalculatorTask(savingDAO, this::triggerCallback);
         this.interestCalculatorTask.start(10, 15);
+    }
+
+    public BankServiceImpl() throws RemoteException {
+        this(RmiConfig.DEFAULT_SERVER_PORT);
     }
 
     // =========================================================================
@@ -192,6 +200,48 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
             e.printStackTrace();
             return false;
         }
+    }
+
+    // =========================================================================
+    // MÔ PHỎNG EBANKING THEO SLIDE BÀI 8: NẠP TIỀN & RÚT TIỀN (CALLBACK REALTIME)
+    // =========================================================================
+
+    @Override
+    public synchronized boolean deposit(String accountNumber, double amount, String description) throws RemoteException {
+        if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        try {
+            boolean success = accountDAO.deposit(accNum, amount, description);
+            if (success) {
+                String desc = (description != null && !description.trim().isEmpty()) ? description.trim() : "Nạp tiền vào tài khoản";
+                String cbMsg = "Nạp tiền thành công: +" + String.format("%,.0f", amount) + " VNĐ (" + desc + ")";
+                triggerCallback(accNum, cbMsg);
+                return true;
+            }
+        } catch (SQLException e) {
+            System.err.println("Lỗi nạp tiền: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    @Override
+    public synchronized boolean withdraw(String accountNumber, double amount, String description) throws RemoteException {
+        if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        final String accNum = accountNumber.trim();
+        try {
+            boolean success = accountDAO.withdraw(accNum, amount, description);
+            if (success) {
+                String desc = (description != null && !description.trim().isEmpty()) ? description.trim() : "Rút tiền mặt";
+                String cbMsg = "Rút tiền thành công: -" + String.format("%,.0f", amount) + " VNĐ (" + desc + ")";
+                triggerCallback(accNum, cbMsg);
+                return true;
+            }
+        } catch (SQLException e) {
+            System.err.println("Lỗi rút tiền: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return false;
     }
 
     // =========================================================================

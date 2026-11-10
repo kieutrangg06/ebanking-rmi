@@ -238,6 +238,109 @@ public class AccountDAO {
     }
 
     /**
+     * Nạp tiền vào tài khoản (Mô phỏng eBanking - Slide 36)
+     */
+    public boolean deposit(String accountNumber, double amount, String description) throws SQLException {
+        if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        accountNumber = accountNumber.trim();
+
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            Account acc = getAccountByNumberForUpdate(conn, accountNumber);
+            if (acc == null || !"ACTIVE".equalsIgnoreCase(acc.getStatus())) {
+                conn.rollback();
+                return false;
+            }
+
+            boolean ok = addBalance(conn, accountNumber, amount);
+            if (!ok) {
+                conn.rollback();
+                return false;
+            }
+
+            String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
+            try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
+                psTx.setString(1, "NAP_TIEN");
+                psTx.setString(2, "HE_THONG");
+                psTx.setString(3, accountNumber);
+                psTx.setDouble(4, amount);
+                psTx.setString(5, (description != null && !description.trim().isEmpty()) ? description.trim() : "Nap tien vao tai khoan");
+                psTx.executeUpdate();
+            }
+
+            conn.commit();
+            conn.setAutoCommit(true);
+            return true;
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try { conn.close(); } catch (SQLException ignored) {}
+            }
+        }
+    }
+
+    /**
+     * Rút tiền từ tài khoản (Mô phỏng eBanking - Slide 36)
+     */
+    public boolean withdraw(String accountNumber, double amount, String description) throws SQLException {
+        if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;
+        accountNumber = accountNumber.trim();
+
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            Account acc = getAccountByNumberForUpdate(conn, accountNumber);
+            if (acc == null || !"ACTIVE".equalsIgnoreCase(acc.getStatus())) {
+                conn.rollback();
+                return false;
+            }
+
+            if (acc.getBalance() < amount) {
+                conn.rollback();
+                return false; // Không đủ số dư
+            }
+
+            boolean ok = deductBalance(conn, accountNumber, amount);
+            if (!ok) {
+                conn.rollback();
+                return false;
+            }
+
+            String recordTxSql = "INSERT INTO transactions (transaction_type, from_account, to_account, amount, description) VALUES (?, ?, ?, ?, ?)";
+            try (PreparedStatement psTx = conn.prepareStatement(recordTxSql)) {
+                psTx.setString(1, "RUT_TIEN");
+                psTx.setString(2, accountNumber);
+                psTx.setString(3, "HE_THONG");
+                psTx.setDouble(4, amount);
+                psTx.setString(5, (description != null && !description.trim().isEmpty()) ? description.trim() : "Rut tien mat");
+                psTx.executeUpdate();
+            }
+
+            conn.commit();
+            conn.setAutoCommit(true);
+            return true;
+        } catch (SQLException e) {
+            if (conn != null) {
+                try { conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try { conn.close(); } catch (SQLException ignored) {}
+            }
+        }
+    }
+
+    /**
      * Lấy thông tin tài khoản và KHÓA dòng (SELECT ... FOR UPDATE) trong transaction.
      * Sử dụng trong thanh toán hóa đơn để bảo vệ ACID.
      */

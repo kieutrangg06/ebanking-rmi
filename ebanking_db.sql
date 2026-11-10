@@ -1,6 +1,6 @@
 -- phpMyAdmin SQL Dump
 -- Database: `ebanking_db`
--- Core Architecture, Authentication & Real-time Transfer (Dev 1)
+-- Complete Schema for e-Banking RMI System (Dev 1, Dev 2, Dev 3)
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -10,6 +10,12 @@ SET time_zone = "+00:00";
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
 /*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Khởi tạo Database nếu chưa tồn tại
+--
+CREATE DATABASE IF NOT EXISTS `ebanking_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `ebanking_db`;
 
 -- --------------------------------------------------------
 
@@ -31,19 +37,21 @@ CREATE TABLE IF NOT EXISTS `accounts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
--- Dữ liệu khởi tạo cho bảng `accounts`
+-- Dữ liệu mẫu cho bảng `accounts`
+-- (Bao gồm các user khách hàng và tài khoản Quản trị viên 'admin')
 --
 
 INSERT INTO `accounts` (`id`, `account_number`, `username`, `password`, `full_name`, `balance`, `status`) VALUES
 (1, '1001', 'usera', '123456', 'Nguyen Van A', 3500000, 'ACTIVE'),
 (2, '1002', 'userb', '123456', 'Tran Thi B', 1650000, 'LOCKED'),
-(3, '1003', 'userc', '123456', 'Le Van C', 2000000, 'ACTIVE')
+(3, '1003', 'userc', '123456', 'Le Van C', 2000000, 'ACTIVE'),
+(4, '9999', 'admin', 'admin123', 'System Administrator', 0, 'ACTIVE')
 ON DUPLICATE KEY UPDATE `full_name`=VALUES(`full_name`);
 
 -- --------------------------------------------------------
 
 --
--- Cấu trúc bảng cho bảng `transactions` (Ghi nhận lịch sử chuyển tiền)
+-- Cấu trúc bảng cho bảng `transactions` (Lịch sử giao dịch, chuyển tiền, thanh toán & tất toán)
 --
 
 CREATE TABLE IF NOT EXISTS `transactions` (
@@ -54,13 +62,15 @@ CREATE TABLE IF NOT EXISTS `transactions` (
   `amount` double NOT NULL,
   `description` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_from_account` (`from_account`),
+  KEY `idx_to_account` (`to_account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
 --
--- Cấu trúc bảng cho bảng `bills` (Thanh toán hóa đơn điện tử - Người 2)
+-- Cấu trúc bảng cho bảng `bills` (Thanh toán hóa đơn điện/nước/internet - Dev 2)
 --
 
 CREATE TABLE IF NOT EXISTS `bills` (
@@ -83,6 +93,34 @@ INSERT INTO `bills` (`id`, `bill_code`, `service_type`, `customer_name`, `amount
 (2, 'WA_DANANG_02', 'Tien Nuoc', 'Tran Thi B', 120000, 'UNPAID'),
 (3, 'FPT_NET_03', 'Internet FPT', 'Le Van C', 250000, 'UNPAID')
 ON DUPLICATE KEY UPDATE `service_type`=VALUES(`service_type`);
+
+-- --------------------------------------------------------
+
+--
+-- Cấu trúc bảng cho bảng `savings` (Sổ tiết kiệm trực tuyến & tính lãi ngầm - Dev 3)
+--
+
+CREATE TABLE IF NOT EXISTS `savings` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `account_number` varchar(20) NOT NULL,
+  `deposit_amount` double NOT NULL,
+  `interest_rate` double NOT NULL,
+  `term_period` int(11) NOT NULL,
+  `accumulated_interest` double NOT NULL DEFAULT 0,
+  `status` varchar(20) DEFAULT 'ACTIVE',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_savings_account` (`account_number`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dữ liệu khởi tạo cho bảng `savings`
+--
+
+INSERT INTO `savings` (`id`, `account_number`, `deposit_amount`, `interest_rate`, `term_period`, `accumulated_interest`, `status`) VALUES
+(1, '1001', 500000, 6.5, 30, 2500, 'ACTIVE'),
+(2, '1003', 1000000, 7.0, 60, 15000, 'ACTIVE')
+ON DUPLICATE KEY UPDATE `status`=VALUES(`status`);
 
 COMMIT;
 

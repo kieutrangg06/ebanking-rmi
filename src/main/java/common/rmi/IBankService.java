@@ -13,7 +13,7 @@ import java.util.List;
 public interface IBankService extends Remote {
 
     // ==========================================
-    // PHẦN VIỆC CỦA NGƯỜI 1: AUTH & CHUYỂN KHOẢN
+    // PHẦN VIỆC CỦA NGƯỜI 1: AUTH & QUẢN LÝ TÀI KHOẢN & CHUYỂN KHOẢN
     // ==========================================
     Account login(String username, String password, IClientCallback callback) throws RemoteException;
     boolean register(String username, String password, String fullName, String accountNumber) throws RemoteException;
@@ -26,6 +26,16 @@ public interface IBankService extends Remote {
      * Chuyển tiền giữa 2 tài khoản, xử lý ACID Transaction và gọi Callback cho người nhận
      */
     boolean transfer(String fromAccountNumber, String toAccountNumber, double amount, String description) throws RemoteException;
+
+    /**
+     * Nạp tiền vào tài khoản (Theo slide Bài 8: Mô phỏng eBanking đơn giản - Nạp tiền)
+     */
+    boolean deposit(String accountNumber, double amount, String description) throws RemoteException;
+
+    /**
+     * Rút tiền từ tài khoản (Theo slide Bài 8: Mô phỏng eBanking đơn giản - Rút tiền)
+     */
+    boolean withdraw(String accountNumber, double amount, String description) throws RemoteException;
 
     // ==========================================
     // NGƯỜI 2: HÓA ĐƠN & SAO KÊ GIAO DỊCH

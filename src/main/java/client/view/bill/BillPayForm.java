@@ -3,6 +3,7 @@ package client.view.bill;
 import client.view.ui.ModernButton;
 import client.view.ui.ModernTextField;
 import client.view.ui.RoundedPanel;
+import client.view.ui.TransactionReceiptDialog;
 import client.view.ui.UITheme;
 import common.models.Account;
 import common.models.Bill;
@@ -15,11 +16,10 @@ import java.rmi.RemoteException;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Giao diện thanh toán hóa đơn trực tuyến (Người 2 - Pure Java Swing).
- * Tích hợp chuẩn UITheme, ModernButton, ModernTextField, RoundedPanel của Dev 1.
- * Sử dụng SwingWorker cho tất cả cuộc gọi RMI để giao diện không bị giật lag/đơ.
+ * Giao diện Thanh Toán Hóa Đơn Trực Tuyến - Tích hợp đồng bộ trong DashboardForm.
+ * Thiết kế chuẩn Neo-Banking hiện đại, tra cứu nhanh, kiểm tra trạng thái và thanh toán tức thì với ACID.
  */
-public class BillPayForm extends JFrame {
+public class BillPayForm extends JPanel {
 
     private final IBankService bankService;
     private final Account account;
@@ -27,7 +27,6 @@ public class BillPayForm extends JFrame {
 
     private ModernTextField txtBillCodeSearch;
     private ModernButton btnSearch;
-    private JLabel lblAccountBalance;
 
     // Bill detail components
     private ModernTextField txtDetailCode;
@@ -37,7 +36,7 @@ public class BillPayForm extends JFrame {
     private JLabel lblDetailStatus;
 
     private ModernButton btnPay;
-    private ModernButton btnClose;
+    private ModernButton btnReset;
     private JLabel lblStatusMsg;
 
     private Bill currentBill;
@@ -55,69 +54,67 @@ public class BillPayForm extends JFrame {
     }
 
     private void initUI() {
-        setTitle("Thanh Toán Hóa Đơn Trực Tuyến - " + account.getFullName() + " (STK: " + account.getAccountNumber() + ")");
-        setSize(700, 620);
-        setMinimumSize(new Dimension(640, 560));
-        setLocationRelativeTo(null);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        getContentPane().setBackground(UITheme.BG_MAIN);
+        setLayout(new BorderLayout(0, 16));
+        setBackground(UITheme.BG_MAIN);
+        setBorder(new EmptyBorder(16, 20, 16, 20));
 
-        JPanel mainPanel = new JPanel(new BorderLayout(15, 15));
-        mainPanel.setBackground(UITheme.BG_MAIN);
-        mainPanel.setBorder(new EmptyBorder(20, 24, 20, 24));
-
-        // 1. TOP HEADER & ACCOUNT BADGE
-        JPanel topPanel = new JPanel(new BorderLayout(10, 10));
+        // 1. TOP HEADER & NHÀ CUNG CẤP DỊCH VỤ NHANH
+        JPanel topPanel = new JPanel();
+        topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
         topPanel.setOpaque(false);
 
-        JPanel titlePanel = new JPanel(new GridLayout(2, 1, 0, 4));
-        titlePanel.setOpaque(false);
-        JLabel lblTitle = new JLabel("THANH TOÁN HÓA ĐƠN TRỰC TUYẾN");
-        lblTitle.setFont(UITheme.FONT_TITLE_XL);
+        // Header Card
+        RoundedPanel headerCard = new RoundedPanel(16, Color.WHITE);
+        headerCard.setLayout(new BorderLayout(14, 12));
+        headerCard.setBorder(new EmptyBorder(16, 20, 16, 20));
+        headerCard.setShowShadow(true);
+
+        JPanel titleBox = new JPanel(new BorderLayout(4, 4));
+        titleBox.setOpaque(false);
+
+        JLabel lblTitle = new JLabel("🧾 THANH TOÁN HÓA ĐƠN TIỆN ÍCH TRỰC TUYẾN 24/7");
+        lblTitle.setFont(UITheme.FONT_TITLE);
         lblTitle.setForeground(UITheme.PRIMARY_DARK);
 
-        JLabel lblSub = new JLabel("Thanh toán tiền Điện (EVN), Nước sạch, Internet (FPT)... an toàn qua RMI");
-        lblSub.setFont(UITheme.FONT_BODY);
+        JLabel lblSub = new JLabel("Hỗ trợ gạch nợ tự động tiền Điện (EVN), Nước sinh hoạt, Cáp & Internet (FPT, VNPT, Viettel). Tiền trừ tức thời.");
+        lblSub.setFont(UITheme.FONT_SMALL);
         lblSub.setForeground(UITheme.TEXT_MUTED);
-        titlePanel.add(lblTitle);
-        titlePanel.add(lblSub);
 
-        // Account balance badge
-        RoundedPanel badgeAcc = new RoundedPanel(12, Color.WHITE);
-        badgeAcc.setLayout(new FlowLayout(FlowLayout.RIGHT, 12, 10));
-        badgeAcc.setBorder(new EmptyBorder(2, 10, 2, 10));
-        badgeAcc.setShowShadow(false);
+        titleBox.add(lblTitle, BorderLayout.NORTH);
+        titleBox.add(lblSub, BorderLayout.SOUTH);
+        headerCard.add(titleBox, BorderLayout.NORTH);
 
-        JLabel lblAccInfo = new JLabel("STK: " + account.getAccountNumber() + " | " + account.getFullName());
-        lblAccInfo.setFont(UITheme.FONT_BODY_BOLD);
-        lblAccInfo.setForeground(UITheme.TEXT_MAIN);
+        // Provider badges row
+        JPanel providersRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
+        providersRow.setOpaque(false);
 
-        lblAccountBalance = new JLabel(UITheme.MONEY_FORMAT.format(account.getBalance()));
-        lblAccountBalance.setFont(UITheme.FONT_BODY_BOLD);
-        lblAccountBalance.setForeground(UITheme.SUCCESS_DARK);
-        lblAccountBalance.setBackground(UITheme.SUCCESS_LIGHT);
-        lblAccountBalance.setOpaque(true);
-        lblAccountBalance.setBorder(new EmptyBorder(4, 10, 4, 10));
+        JLabel lblProviderHint = new JLabel("Dịch vụ liên kết:");
+        lblProviderHint.setFont(UITheme.FONT_SMALL_BOLD);
+        lblProviderHint.setForeground(UITheme.TEXT_MUTED);
+        providersRow.add(lblProviderHint);
 
-        badgeAcc.add(lblAccInfo);
-        badgeAcc.add(lblAccountBalance);
+        providersRow.add(createProviderChip("⚡ Điện Lực EVN", new Color(254, 243, 199), new Color(146, 64, 14)));
+        providersRow.add(createProviderChip("💧 Cấp Nước Sạch", new Color(224, 242, 254), new Color(7, 89, 133)));
+        providersRow.add(createProviderChip("🌐 Internet FPT", new Color(255, 237, 213), new Color(154, 52, 18)));
+        providersRow.add(createProviderChip("📱 Viễn Thông 4G/5G", new Color(243, 232, 255), new Color(107, 33, 168)));
 
-        topPanel.add(titlePanel, BorderLayout.WEST);
-        topPanel.add(badgeAcc, BorderLayout.EAST);
-        mainPanel.add(topPanel, BorderLayout.NORTH);
+        headerCard.add(providersRow, BorderLayout.CENTER);
+        topPanel.add(headerCard);
 
-        // 2. CENTER CONTENT (Search box + Bill details card)
+        add(topPanel, BorderLayout.NORTH);
+
+        // 2. CENTER CONTENT (Tra cứu + Chi tiết hóa đơn)
         JPanel centerPanel = new JPanel();
         centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
         centerPanel.setOpaque(false);
 
         // Khối Tra cứu mã hóa đơn
-        RoundedPanel searchCard = new RoundedPanel(14, Color.WHITE);
+        RoundedPanel searchCard = new RoundedPanel(16, Color.WHITE);
         searchCard.setLayout(new BorderLayout(10, 10));
-        searchCard.setBorder(new EmptyBorder(14, 16, 14, 16));
-        searchCard.setShowShadow(false);
+        searchCard.setBorder(new EmptyBorder(16, 20, 16, 20));
+        searchCard.setShowShadow(true);
 
-        JLabel lblSearchTitle = new JLabel("Tra cứu mã hóa đơn cần thanh toán:");
+        JLabel lblSearchTitle = new JLabel("Tra Cứu Mã Hóa Đơn Khách Hàng:");
         lblSearchTitle.setFont(UITheme.FONT_SUBTITLE);
         lblSearchTitle.setForeground(UITheme.TEXT_MAIN);
 
@@ -125,7 +122,10 @@ public class BillPayForm extends JFrame {
         searchInputRow.setOpaque(false);
 
         txtBillCodeSearch = new ModernTextField("Nhập mã hóa đơn (VD: EVN_HANOI_01, WA_DANANG_02, FPT_NET_03)...");
-        btnSearch = new ModernButton("  Tra Cứu Hóa Đơn  ", ModernButton.Style.PRIMARY);
+        txtBillCodeSearch.setPreferredSize(new Dimension(300, 38));
+
+        btnSearch = new ModernButton("🔍 Tra Cứu Ngay", ModernButton.Style.PRIMARY);
+        btnSearch.setCornerRadius(8);
         btnSearch.addActionListener(e -> performSearchBill());
         txtBillCodeSearch.addActionListener(e -> performSearchBill());
 
@@ -135,19 +135,19 @@ public class BillPayForm extends JFrame {
         // Quick suggestions buttons
         JPanel quickPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         quickPanel.setOpaque(false);
-        JLabel lblQuick = new JLabel("Hóa đơn mẫu:");
+        JLabel lblQuick = new JLabel("Gợi ý mã mẫu:");
         lblQuick.setFont(UITheme.FONT_SMALL_BOLD);
         lblQuick.setForeground(UITheme.TEXT_MUTED);
         quickPanel.add(lblQuick);
 
-        addQuickCodeButton(quickPanel, "EVN_HANOI_01");
-        addQuickCodeButton(quickPanel, "WA_DANANG_02");
-        addQuickCodeButton(quickPanel, "FPT_NET_03");
+        addQuickCodeButton(quickPanel, "EVN_HANOI_01", "⚡ Tiền Điện");
+        addQuickCodeButton(quickPanel, "WA_DANANG_02", "💧 Tiền Nước");
+        addQuickCodeButton(quickPanel, "FPT_NET_03", "🌐 Internet");
 
-        JPanel searchInner = new JPanel(new GridLayout(2, 1, 0, 8));
+        JPanel searchInner = new JPanel(new BorderLayout(0, 10));
         searchInner.setOpaque(false);
-        searchInner.add(searchInputRow);
-        searchInner.add(quickPanel);
+        searchInner.add(searchInputRow, BorderLayout.NORTH);
+        searchInner.add(quickPanel, BorderLayout.SOUTH);
 
         searchCard.add(lblSearchTitle, BorderLayout.NORTH);
         searchCard.add(searchInner, BorderLayout.CENTER);
@@ -156,18 +156,18 @@ public class BillPayForm extends JFrame {
         centerPanel.add(Box.createVerticalStrut(14));
 
         // Khối Chi tiết hóa đơn
-        RoundedPanel detailCard = new RoundedPanel(14, Color.WHITE);
+        RoundedPanel detailCard = new RoundedPanel(16, Color.WHITE);
         detailCard.setLayout(new BoxLayout(detailCard, BoxLayout.Y_AXIS));
-        detailCard.setBorder(new EmptyBorder(16, 18, 16, 18));
-        detailCard.setShowShadow(false);
+        detailCard.setBorder(new EmptyBorder(18, 20, 18, 20));
+        detailCard.setShowShadow(true);
 
-        JLabel lblDetailCardTitle = new JLabel("Thông tin hóa đơn chi tiết:");
+        JLabel lblDetailCardTitle = new JLabel("Thông Tin Hóa Đơn Chi Tiết:");
         lblDetailCardTitle.setFont(UITheme.FONT_SUBTITLE);
         lblDetailCardTitle.setForeground(UITheme.TEXT_MAIN);
         detailCard.add(lblDetailCardTitle);
         detailCard.add(Box.createVerticalStrut(12));
 
-        JPanel formGrid = new JPanel(new GridLayout(4, 2, 14, 10));
+        JPanel formGrid = new JPanel(new GridLayout(2, 2, 16, 12));
         formGrid.setOpaque(false);
 
         txtDetailCode = new ModernTextField();
@@ -182,14 +182,10 @@ public class BillPayForm extends JFrame {
         txtDetailCustomer.setEditable(false);
         txtDetailCustomer.setBackground(UITheme.BG_INPUT);
 
-        formGrid.add(createFieldGroup("Mã hóa đơn:", txtDetailCode));
-        formGrid.add(createFieldGroup("Loại dịch vụ / Nhà cung cấp:", txtDetailProvider));
-        formGrid.add(createFieldGroup("Khách hàng đăng ký:", txtDetailCustomer));
-
         // Status badge panel
         JPanel statusGroup = new JPanel(new BorderLayout(0, 4));
         statusGroup.setOpaque(false);
-        JLabel lblStTitle = new JLabel("Trạng thái gạch nợ:");
+        JLabel lblStTitle = new JLabel("Trạng thái nợ cước:");
         lblStTitle.setFont(UITheme.FONT_SMALL_BOLD);
         lblStTitle.setForeground(UITheme.TEXT_MUTED);
 
@@ -201,19 +197,24 @@ public class BillPayForm extends JFrame {
         lblDetailStatus.setBorder(new EmptyBorder(8, 14, 8, 14));
         statusGroup.add(lblStTitle, BorderLayout.NORTH);
         statusGroup.add(lblDetailStatus, BorderLayout.CENTER);
+
+        formGrid.add(createFieldGroup("Mã hóa đơn:", txtDetailCode));
+        formGrid.add(createFieldGroup("Loại dịch vụ / Nhà cung cấp:", txtDetailProvider));
+        formGrid.add(createFieldGroup("Họ tên khách hàng:", txtDetailCustomer));
         formGrid.add(statusGroup);
 
         detailCard.add(formGrid);
         detailCard.add(Box.createVerticalStrut(14));
 
         // Amount banner
-        JPanel amountBanner = new JPanel(new BorderLayout());
-        amountBanner.setBackground(UITheme.PRIMARY_LIGHT);
-        amountBanner.setBorder(new EmptyBorder(12, 16, 12, 16));
+        RoundedPanel amountBanner = new RoundedPanel(12, UITheme.PRIMARY_LIGHT);
+        amountBanner.setLayout(new BorderLayout(10, 0));
+        amountBanner.setBorder(new EmptyBorder(12, 18, 12, 18));
+        amountBanner.setShowShadow(false);
 
-        JLabel lblAmtTitle = new JLabel("Tổng tiền thanh toán:");
+        JLabel lblAmtTitle = new JLabel("TỔNG TIỀN PHẢI THANH TOÁN:");
         lblAmtTitle.setFont(UITheme.FONT_BODY_BOLD);
-        lblAmtTitle.setForeground(UITheme.PRIMARY_HOVER);
+        lblAmtTitle.setForeground(UITheme.PRIMARY_DARK);
 
         lblDetailAmount = new JLabel("0 VNĐ", SwingConstants.RIGHT);
         lblDetailAmount.setFont(new Font("Segoe UI", Font.BOLD, 22));
@@ -223,39 +224,62 @@ public class BillPayForm extends JFrame {
         amountBanner.add(lblDetailAmount, BorderLayout.EAST);
         detailCard.add(amountBanner);
 
-        centerPanel.add(detailCard);
-        mainPanel.add(centerPanel, BorderLayout.CENTER);
+        detailCard.add(Box.createVerticalStrut(16));
 
-        // 3. BOTTOM ACTIONS & STATUS MESSAGE
-        JPanel bottomPanel = new JPanel(new BorderLayout(10, 8));
-        bottomPanel.setOpaque(false);
+        // Action buttons
+        JPanel actionRow = new JPanel(new BorderLayout());
+        actionRow.setOpaque(false);
 
-        lblStatusMsg = new JLabel(" ", SwingConstants.LEFT);
+        lblStatusMsg = new JLabel("Nhập mã hóa đơn hoặc chọn mẫu phía trên để bắt đầu.", SwingConstants.LEFT);
         lblStatusMsg.setFont(UITheme.FONT_BODY);
         lblStatusMsg.setForeground(UITheme.TEXT_MUTED);
-        bottomPanel.add(lblStatusMsg, BorderLayout.NORTH);
+        actionRow.add(lblStatusMsg, BorderLayout.WEST);
 
-        JPanel btnBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        JPanel btnBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         btnBar.setOpaque(false);
 
-        btnClose = new ModernButton("  Đóng  ", ModernButton.Style.SECONDARY);
-        btnClose.addActionListener(e -> dispose());
+        btnReset = new ModernButton("Nhập Lại", ModernButton.Style.SECONDARY);
+        btnReset.setCornerRadius(8);
+        btnReset.addActionListener(e -> {
+            txtBillCodeSearch.setText("");
+            clearBillDetails();
+            txtBillCodeSearch.requestFocus();
+        });
 
-        btnPay = new ModernButton("  Xác Nhận Thanh Toán Hóa Đơn  ", ModernButton.Style.SUCCESS);
+        btnPay = new ModernButton("✔ Xác Nhận Thanh Toán", ModernButton.Style.SUCCESS);
+        btnPay.setCornerRadius(8);
         btnPay.setEnabled(false);
         btnPay.addActionListener(e -> performPayBill());
 
-        btnBar.add(btnClose);
+        btnBar.add(btnReset);
         btnBar.add(btnPay);
-        bottomPanel.add(btnBar, BorderLayout.SOUTH);
+        actionRow.add(btnBar, BorderLayout.EAST);
 
-        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+        detailCard.add(actionRow);
 
-        add(mainPanel);
+        centerPanel.add(detailCard);
+
+        JScrollPane scrollPane = new JScrollPane(centerPanel);
+        scrollPane.setBorder(null);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(12);
+
+        add(scrollPane, BorderLayout.CENTER);
     }
 
-    private void addQuickCodeButton(JPanel parent, String code) {
-        ModernButton btn = new ModernButton(code, ModernButton.Style.OUTLINE);
+    private JLabel createProviderChip(String text, Color bg, Color fg) {
+        JLabel chip = new JLabel(text);
+        chip.setFont(UITheme.FONT_SMALL_BOLD);
+        chip.setForeground(fg);
+        chip.setBackground(bg);
+        chip.setOpaque(true);
+        chip.setBorder(new EmptyBorder(4, 10, 4, 10));
+        return chip;
+    }
+
+    private void addQuickCodeButton(JPanel parent, String code, String label) {
+        ModernButton btn = new ModernButton(label + " (" + code + ")", ModernButton.Style.OUTLINE);
         btn.setFont(UITheme.FONT_SMALL_BOLD);
         btn.setCornerRadius(6);
         btn.setMargin(new Insets(3, 8, 3, 8));
@@ -275,6 +299,12 @@ public class BillPayForm extends JFrame {
         p.add(l, BorderLayout.NORTH);
         p.add(comp, BorderLayout.CENTER);
         return p;
+    }
+
+    public void refreshData() {
+        if (currentBill != null && !txtDetailCode.getText().trim().isEmpty()) {
+            performSearchBill();
+        }
     }
 
     private void performSearchBill() {
@@ -305,7 +335,7 @@ public class BillPayForm extends JFrame {
                         currentBill = null;
                         clearBillDetails();
                         lblStatusMsg.setText("Không tìm thấy thông tin hóa đơn có mã: " + code);
-                        lblStatusMsg.setForeground(UITheme.DANGER_DARK);
+                        lblStatusMsg.setForeground(UITheme.DANGER);
                         JOptionPane.showMessageDialog(BillPayForm.this,
                                 "Không tìm thấy hóa đơn: " + code + "\nVui lòng kiểm tra lại mã hoặc liên hệ nhà cung cấp.",
                                 "Không Tìm Thấy Hóa Đơn",
@@ -316,10 +346,10 @@ public class BillPayForm extends JFrame {
                     }
                 } catch (InterruptedException | ExecutionException ex) {
                     lblStatusMsg.setText("Lỗi kết nối tới Server: " + ex.getMessage());
-                    lblStatusMsg.setForeground(UITheme.DANGER_DARK);
+                    lblStatusMsg.setForeground(UITheme.DANGER);
                     JOptionPane.showMessageDialog(BillPayForm.this,
                             "Lỗi khi tra cứu hóa đơn: " + ex.getMessage(),
-                            "Lỗi Mạng",
+                            "Lỗi Mạng RMI",
                             JOptionPane.ERROR_MESSAGE);
                 }
             }
@@ -334,18 +364,18 @@ public class BillPayForm extends JFrame {
         lblDetailAmount.setText(UITheme.MONEY_FORMAT.format(bill.getAmount()));
 
         if ("PAID".equalsIgnoreCase(bill.getStatus())) {
-            lblDetailStatus.setText("ĐÃ THANH TOÁN (PAID)");
+            lblDetailStatus.setText("✔ ĐÃ THANH TOÁN (PAID)");
             lblDetailStatus.setForeground(UITheme.SUCCESS_DARK);
             lblDetailStatus.setBackground(UITheme.SUCCESS_LIGHT);
             btnPay.setEnabled(false);
-            lblStatusMsg.setText("Hóa đơn này đã được thanh toán trước đó. Không cần thanh toán lại.");
+            lblStatusMsg.setText("Hóa đơn này đã được thanh toán hoàn tất. Không cần thanh toán lại.");
             lblStatusMsg.setForeground(UITheme.SUCCESS_DARK);
         } else {
-            lblDetailStatus.setText("CHƯA THANH TOÁN (UNPAID)");
+            lblDetailStatus.setText("⚠ CHƯA THANH TOÁN (UNPAID)");
             lblDetailStatus.setForeground(UITheme.DANGER_DARK);
             lblDetailStatus.setBackground(UITheme.DANGER_LIGHT);
             btnPay.setEnabled(true);
-            lblStatusMsg.setText("Đã tìm thấy hóa đơn hợp lệ. Sẵn sàng thanh toán.");
+            lblStatusMsg.setText("Đã tìm thấy hóa đơn hợp lệ. Nhấn 'Xác Nhận Thanh Toán' để tiếp tục.");
             lblStatusMsg.setForeground(UITheme.TEXT_MAIN);
         }
     }
@@ -358,6 +388,9 @@ public class BillPayForm extends JFrame {
         lblDetailStatus.setText("Chưa tra cứu");
         lblDetailStatus.setForeground(UITheme.TEXT_MUTED);
         lblDetailStatus.setBackground(new Color(241, 245, 249));
+        btnPay.setEnabled(false);
+        lblStatusMsg.setText("Nhập mã hóa đơn hoặc chọn mẫu phía trên để bắt đầu.");
+        lblStatusMsg.setForeground(UITheme.TEXT_MUTED);
     }
 
     private void performPayBill() {
@@ -381,7 +414,6 @@ public class BillPayForm extends JFrame {
             return;
         }
 
-        // Xác nhận thanh toán
         String confirmMsg = "XÁC NHẬN GIAO DỊCH THANH TOÁN HÓA ĐƠN:\n\n"
                 + "• Mã hóa đơn: " + currentBill.getBillCode() + "\n"
                 + "• Dịch vụ: " + currentBill.getServiceType() + "\n"
@@ -396,8 +428,7 @@ public class BillPayForm extends JFrame {
         }
 
         btnPay.setEnabled(false);
-        btnClose.setEnabled(false);
-        lblStatusMsg.setText("Đang thực hiện giao dịch thanh toán ACID qua Server...");
+        lblStatusMsg.setText("Đang thực hiện giao dịch thanh toán an toàn qua Server...");
         lblStatusMsg.setForeground(UITheme.PRIMARY);
 
         SwingWorker<Boolean, Void> payWorker = new SwingWorker<>() {
@@ -415,7 +446,6 @@ public class BillPayForm extends JFrame {
 
             @Override
             protected void done() {
-                btnClose.setEnabled(true);
                 try {
                     boolean success = get();
                     if (success) {
@@ -424,23 +454,28 @@ public class BillPayForm extends JFrame {
 
                         // Cập nhật số dư cục bộ
                         account.setBalance(account.getBalance() - currentBill.getAmount());
-                        lblAccountBalance.setText(UITheme.MONEY_FORMAT.format(account.getBalance()));
 
                         if (onBalanceUpdated != null) {
                             onBalanceUpdated.run();
                         }
 
-                        JOptionPane.showMessageDialog(BillPayForm.this,
-                                "THANH TOÁN HÓA ĐƠN THÀNH CÔNG!\n\n"
-                                        + "Mã hóa đơn: " + currentBill.getBillCode() + "\n"
-                                        + "Số tiền: " + UITheme.MONEY_FORMAT.format(currentBill.getAmount()) + "\n"
-                                        + "Số dư còn lại: " + UITheme.MONEY_FORMAT.format(account.getBalance()),
-                                "Thành Công",
-                                JOptionPane.INFORMATION_MESSAGE);
+                        // Hiển thị biên lai giao dịch điện tử
+                        Window parentWindow = SwingUtilities.getWindowAncestor(BillPayForm.this);
+                        TransactionReceiptDialog receiptDialog = new TransactionReceiptDialog(
+                                parentWindow,
+                                account.getAccountNumber(),
+                                account.getFullName(),
+                                currentBill.getBillCode(),
+                                currentBill.getCustomerName() + " (" + currentBill.getServiceType() + ")",
+                                currentBill.getAmount(),
+                                "Thanh toán cước: " + currentBill.getServiceType() + " - Mã: " + currentBill.getBillCode()
+                        );
+                        receiptDialog.setVisible(true);
+
                     } else {
                         btnPay.setEnabled(true);
                         JOptionPane.showMessageDialog(BillPayForm.this,
-                                "Giao dịch thanh toán không thành công. Vui lòng thử lại!",
+                                "Giao dịch thanh toán không thành công. Vui lòng kiểm tra lại số dư hoặc trạng thái hóa đơn!",
                                 "Giao Dịch Thất Bại",
                                 JOptionPane.ERROR_MESSAGE);
                     }
@@ -448,7 +483,7 @@ public class BillPayForm extends JFrame {
                     btnPay.setEnabled(true);
                     String msg = errorDetail != null ? errorDetail : ex.getMessage();
                     lblStatusMsg.setText("Thất bại: " + msg);
-                    lblStatusMsg.setForeground(UITheme.DANGER_DARK);
+                    lblStatusMsg.setForeground(UITheme.DANGER);
                     JOptionPane.showMessageDialog(BillPayForm.this,
                             "Lỗi thanh toán: " + msg,
                             "Lỗi Giao Dịch",

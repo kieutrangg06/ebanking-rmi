@@ -1,10 +1,13 @@
 package client.view.ui;
 
+import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
 import java.awt.*;
 import java.text.DecimalFormat;
 
 public class UITheme {
-    // Primary Palette (Digital Banking Blue & Slate)
+    // Primary Palette (Modern Fintech Blue & Navy)
     public static final Color PRIMARY = new Color(26, 86, 219);             // #1A56DB Royal Blue
     public static final Color PRIMARY_HOVER = new Color(30, 66, 159);       // #1E429F
     public static final Color PRIMARY_DARK = new Color(15, 23, 42);          // #0F172A Slate 900
@@ -39,7 +42,7 @@ public class UITheme {
     public static final Color TEXT_MUTED = new Color(107, 114, 128);        // #6B7280 Gray 500
     public static final Color TEXT_HINT = new Color(156, 163, 175);         // #9CA3AF Gray 400
 
-    // Fonts
+    // Fonts (Segoe UI for clean Windows typography)
     public static final Font FONT_TITLE_XL = new Font("Segoe UI", Font.BOLD, 22);
     public static final Font FONT_TITLE = new Font("Segoe UI", Font.BOLD, 16);
     public static final Font FONT_SUBTITLE = new Font("Segoe UI", Font.BOLD, 14);
@@ -50,6 +53,40 @@ public class UITheme {
     public static final Font FONT_MONO = new Font("Consolas", Font.BOLD, 14);
 
     public static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,### VNĐ");
+
+    /**
+     * Đồng bộ hóa giao diện bảng chuẩn phong cách hiện đại Fintech
+     */
+    public static void applyModernTableStyle(JTable table) {
+        table.setRowHeight(34);
+        table.setFont(FONT_BODY);
+        table.setGridColor(new Color(243, 244, 246));
+        table.setShowGrid(true);
+        table.setIntercellSpacing(new Dimension(0, 1));
+        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        table.setSelectionBackground(PRIMARY_LIGHT);
+        table.setSelectionForeground(PRIMARY_DARK);
+
+        JTableHeader header = table.getTableHeader();
+        header.setFont(FONT_BODY_BOLD);
+        header.setBackground(new Color(248, 250, 252));
+        header.setForeground(PRIMARY_DARK);
+        header.setPreferredSize(new Dimension(header.getWidth(), 38));
+        header.setBorder(BorderFactory.createMatteBorder(0, 0, 2, 0, BORDER_COLOR));
+        header.setReorderingAllowed(false);
+
+        // Striped rows rendering
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl, Object value, boolean isSelected, boolean hasFocus, int row, int col) {
+                Component c = super.getTableCellRendererComponent(tbl, value, isSelected, hasFocus, row, col);
+                if (!isSelected) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(250, 251, 253));
+                }
+                return c;
+            }
+        });
+    }
 
     /**
      * Chuyển số tiền thành chữ tiếng Việt trực quan (chuẩn trải nghiệm ngân hàng)
@@ -104,7 +141,8 @@ public class UITheme {
             else if (ones > 0) sb.append(" ").append(digits[ones]);
         } else if (tens == 0) {
             if (ones > 0) {
-                if (sb.length() > 0) sb.append(" linh ");
+                if (sb.length() > 0) sb.append(" ");
+                sb.append("linh ");
                 sb.append(digits[ones]);
             }
         }

@@ -6,6 +6,7 @@ import client.view.ui.ModernTextField;
 import client.view.ui.RoundedPanel;
 import client.view.ui.UITheme;
 import common.rmi.IBankService;
+import common.rmi.RmiConfig;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -32,7 +33,7 @@ public class RegisterForm extends JFrame {
 
     private void initComponents(String defaultHost) {
         setTitle("e-Banking RMI - Mở Tài Khoản Trực Tuyến");
-        setSize(500, 670);
+        setSize(500, 680);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         setLocationRelativeTo(parentLogin);
         setResizable(false);
@@ -40,11 +41,11 @@ public class RegisterForm extends JFrame {
 
         JPanel contentPane = new JPanel(new BorderLayout());
         contentPane.setBackground(UITheme.BG_MAIN);
-        contentPane.setBorder(new EmptyBorder(20, 25, 20, 25));
+        contentPane.setBorder(new EmptyBorder(16, 24, 16, 24));
 
         RoundedPanel mainCard = new RoundedPanel(20, Color.WHITE);
         mainCard.setLayout(new BoxLayout(mainCard, BoxLayout.Y_AXIS));
-        mainCard.setBorder(new EmptyBorder(20, 25, 20, 25));
+        mainCard.setBorder(new EmptyBorder(18, 22, 18, 22));
         mainCard.setShowShadow(true);
 
         // Header
@@ -61,62 +62,68 @@ public class RegisterForm extends JFrame {
 
         headerPanel.add(Box.createVerticalStrut(4));
 
-        JLabel lblSub = new JLabel("Mở tài khoản thanh toán trực tuyến nhanh chóng & an toàn");
+        JLabel lblSub = new JLabel("Khởi tạo tài khoản ngân hàng số e-Banking định danh");
         lblSub.setFont(UITheme.FONT_SMALL);
         lblSub.setForeground(UITheme.TEXT_MUTED);
         lblSub.setAlignmentX(Component.CENTER_ALIGNMENT);
         headerPanel.add(lblSub);
 
         mainCard.add(headerPanel);
-        mainCard.add(Box.createVerticalStrut(15));
+        mainCard.add(Box.createVerticalStrut(14));
 
-        // Form Fields Container
+        // Form fields
         JPanel formFields = new JPanel();
         formFields.setLayout(new BoxLayout(formFields, BoxLayout.Y_AXIS));
         formFields.setOpaque(false);
 
-        // RMI Host
-        formFields.add(createFieldLabel("Máy chủ RMI:"));
-        txtHost = new ModernTextField("localhost");
-        txtHost.setText(defaultHost != null && !defaultHost.isEmpty() ? defaultHost : "localhost");
+        // Host Input
+        formFields.add(createFieldLabel("Địa chỉ máy chủ RMI:*"));
+        txtHost = new ModernTextField("Địa chỉ máy chủ (VD: 192.168.1.15 hoặc localhost)");
+        txtHost.setText(defaultHost != null && !defaultHost.isEmpty() ? defaultHost : RmiConfig.getBestLocalIp());
         txtHost.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtHost);
-        formFields.add(Box.createVerticalStrut(10));
 
-        // Số tài khoản
-        formFields.add(createFieldLabel("Số tài khoản mong muốn (*):"));
-        txtAccountNum = new ModernTextField("VD: 1004, 2026, 8888...");
+        formFields.add(Box.createVerticalStrut(8));
+
+        // Account Number Input
+        formFields.add(createFieldLabel("Số tài khoản mong muốn (STK):*"));
+        txtAccountNum = new ModernTextField("VD: 1004, 8888, 6789...");
         txtAccountNum.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtAccountNum);
-        formFields.add(Box.createVerticalStrut(10));
 
-        // Họ và tên
-        formFields.add(createFieldLabel("Họ và tên chủ tài khoản (*):"));
-        txtFullName = new ModernTextField("VD: NGUYEN VAN A");
+        formFields.add(Box.createVerticalStrut(8));
+
+        // Full Name Input
+        formFields.add(createFieldLabel("Họ và tên chủ tài khoản:*"));
+        txtFullName = new ModernTextField("VD: NGUYEN VAN AN");
         txtFullName.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtFullName);
-        formFields.add(Box.createVerticalStrut(10));
 
-        // Username
-        formFields.add(createFieldLabel("Tên đăng nhập hệ thống (*):"));
-        txtUsername = new ModernTextField("VD: usera, nguyenvan_a");
+        formFields.add(Box.createVerticalStrut(8));
+
+        // Username Input
+        formFields.add(createFieldLabel("Tên đăng nhập hệ thống:*"));
+        txtUsername = new ModernTextField("VD: nguyenan2026");
         txtUsername.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtUsername);
-        formFields.add(Box.createVerticalStrut(10));
 
-        // Password
-        formFields.add(createFieldLabel("Mật khẩu bảo mật (*):"));
-        txtPassword = new ModernPasswordField("Nhập mật khẩu (tối thiểu 6 ký tự)...");
+        formFields.add(Box.createVerticalStrut(8));
+
+        // Password Input
+        formFields.add(createFieldLabel("Mật khẩu bảo mật:*"));
+        txtPassword = new ModernPasswordField("Nhập mật khẩu...");
         txtPassword.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtPassword);
-        formFields.add(Box.createVerticalStrut(10));
 
-        // Confirm Password
-        formFields.add(createFieldLabel("Nhập lại mật khẩu xác nhận (*):"));
-        txtConfirmPassword = new ModernPasswordField("Nhập lại mật khẩu giống bên trên...");
+        formFields.add(Box.createVerticalStrut(8));
+
+        // Confirm Password Input
+        formFields.add(createFieldLabel("Xác nhận lại mật khẩu:*"));
+        txtConfirmPassword = new ModernPasswordField("Nhập lại mật khẩu...");
         txtConfirmPassword.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
         formFields.add(txtConfirmPassword);
-        formFields.add(Box.createVerticalStrut(10));
+
+        formFields.add(Box.createVerticalStrut(6));
 
         // Status banner
         lblStatus = new JLabel(" ");
@@ -126,17 +133,19 @@ public class RegisterForm extends JFrame {
         formFields.add(lblStatus);
 
         mainCard.add(formFields);
-        mainCard.add(Box.createVerticalStrut(12));
+        mainCard.add(Box.createVerticalStrut(10));
 
         // Buttons
-        JPanel actionPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        JPanel actionPanel = new JPanel(new GridLayout(1, 2, 10, 0));
         actionPanel.setOpaque(false);
-        actionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        actionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
 
-        btnCancel = new ModernButton("Quay Lại", ModernButton.Style.SECONDARY);
+        btnCancel = new ModernButton("Hủy Bỏ", ModernButton.Style.SECONDARY);
+        btnCancel.setFont(UITheme.FONT_BODY);
         btnCancel.addActionListener(e -> dispose());
 
-        btnRegister = new ModernButton("ĐĂNG KÝ NGAY", ModernButton.Style.SUCCESS);
+        btnRegister = new ModernButton("ĐĂNG KÝ NGAY", ModernButton.Style.PRIMARY);
+        btnRegister.setFont(UITheme.FONT_BODY_BOLD);
         btnRegister.addActionListener(e -> performRegister());
 
         actionPanel.add(btnCancel);
@@ -159,14 +168,14 @@ public class RegisterForm extends JFrame {
     }
 
     private void performRegister() {
-        String host = txtHost.getText().trim();
+        String hostRaw = txtHost.getText().trim();
         String accNum = txtAccountNum.getText().trim();
         String fullName = txtFullName.getText().trim();
         String username = txtUsername.getText().trim();
         String password = new String(txtPassword.getPassword()).trim();
         String confirmPass = new String(txtConfirmPassword.getPassword()).trim();
 
-        if (host.isEmpty() || accNum.isEmpty() || fullName.isEmpty() || username.isEmpty() || password.isEmpty()) {
+        if (hostRaw.isEmpty() || accNum.isEmpty() || fullName.isEmpty() || username.isEmpty() || password.isEmpty()) {
             lblStatus.setForeground(UITheme.DANGER);
             lblStatus.setText("Vui lòng điền đầy đủ tất cả các trường có dấu (*)!");
             return;
@@ -179,6 +188,17 @@ public class RegisterForm extends JFrame {
             return;
         }
 
+        String host = hostRaw;
+        int port = RmiConfig.DEFAULT_REGISTRY_PORT;
+        if (hostRaw.contains(":")) {
+            String[] parts = hostRaw.split(":");
+            host = parts[0].trim();
+            try { port = Integer.parseInt(parts[1].trim()); } catch (Exception ignored) {}
+        }
+
+        final String finalHost = host;
+        final int finalPort = port;
+
         lblStatus.setForeground(UITheme.PRIMARY);
         lblStatus.setText("Đang gửi yêu cầu khởi tạo tài khoản lên máy chủ...");
         btnRegister.setEnabled(false);
@@ -190,8 +210,8 @@ public class RegisterForm extends JFrame {
             @Override
             protected Boolean doInBackground() throws Exception {
                 try {
-                    Registry registry = LocateRegistry.getRegistry(host, 1099);
-                    IBankService bankService = (IBankService) registry.lookup("BankService");
+                    Registry registry = LocateRegistry.getRegistry(finalHost, finalPort);
+                    IBankService bankService = (IBankService) registry.lookup(RmiConfig.SERVICE_NAME);
                     return bankService.register(username, password, fullName, accNum);
                 } catch (Exception ex) {
                     error = ex.getMessage();
@@ -221,20 +241,20 @@ public class RegisterForm extends JFrame {
                     } else {
                         lblStatus.setForeground(UITheme.DANGER);
                         if (error != null) {
-                            lblStatus.setText("Lỗi mạng: Không kết nối được RMI Server!");
+                            lblStatus.setText("Lỗi mạng: Không thể kết nối tới máy chủ RMI!");
                             JOptionPane.showMessageDialog(RegisterForm.this,
-                                    "Không thể kết nối đến máy chủ RMI: " + error,
-                                    "Lỗi Kết Nối", JOptionPane.ERROR_MESSAGE);
+                                    "Lỗi kết nối máy chủ RMI:\n" + error,
+                                    "Lỗi Đăng Ký", JOptionPane.ERROR_MESSAGE);
                         } else {
-                            lblStatus.setText("Tên đăng nhập hoặc Số tài khoản đã được sử dụng!");
+                            lblStatus.setText("Tên đăng nhập hoặc số tài khoản đã tồn tại trong hệ thống!");
                             JOptionPane.showMessageDialog(RegisterForm.this,
-                                    "Tên đăng nhập hoặc Số tài khoản đã tồn tại trên hệ thống!\nVui lòng chọn một số tài khoản hoặc username khác.",
-                                    "Đăng Ký Không Thành Công", JOptionPane.WARNING_MESSAGE);
+                                    "Số tài khoản (" + accNum + ") hoặc Tên đăng nhập (" + username + ") đã được đăng ký trước đó.\nVui lòng chọn thông tin khác!",
+                                    "Trùng Lặp Dữ Liệu", JOptionPane.WARNING_MESSAGE);
                         }
                     }
                 } catch (Exception ex) {
                     lblStatus.setForeground(UITheme.DANGER);
-                    lblStatus.setText("Lỗi hệ thống khi đăng ký!");
+                    lblStatus.setText("Lỗi hệ thống khi khởi tạo tài khoản!");
                     ex.printStackTrace();
                 }
             }

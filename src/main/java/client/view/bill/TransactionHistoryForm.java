@@ -13,7 +13,6 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.table.JTableHeader;
 import java.awt.*;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -22,16 +21,16 @@ import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Giao diện xem lịch sử giao dịch và xuất sao kê CSV thuần Java Swing (Người 2).
- * Tích hợp chuẩn UITheme, ModernButton, ModernTextField, RoundedPanel.
- * Sử dụng SwingWorker cho tất cả truy vấn RMI.
+ * Giao diện Xem Lịch Sử Giao Dịch & Xuất Sao Kê Tài Khoản - Tích hợp đồng bộ trong DashboardForm.
+ * Hỗ trợ bộ lọc thời gian thực, hiển thị biến động số dư trực quan (+ / -) và xuất file CSV chuẩn Excel.
  */
-public class TransactionHistoryForm extends JFrame {
+public class TransactionHistoryForm extends JPanel {
 
     private final IBankService bankService;
     private final Account account;
@@ -40,11 +39,15 @@ public class TransactionHistoryForm extends JFrame {
     private ModernTextField txtToDate;
     private ModernButton btnFilter;
     private ModernButton btnAll;
+    private ModernButton btnToday;
+    private ModernButton btn7Days;
     private ModernButton btnExportCsv;
 
     private JTable table;
     private DefaultTableModel tableModel;
-    private JLabel lblSummary;
+    private JLabel lblTotalCount;
+    private JLabel lblTotalIn;
+    private JLabel lblTotalOut;
     private JLabel lblStatus;
 
     private final List<Transaction> currentTransactions = new ArrayList<>();
@@ -61,74 +64,113 @@ public class TransactionHistoryForm extends JFrame {
     }
 
     private void initUI() {
-        setTitle("Lịch Sử Giao Dịch & Sao Kê - " + account.getFullName() + " (STK: " + account.getAccountNumber() + ")");
-        setSize(960, 640);
-        setMinimumSize(new Dimension(860, 520));
-        setLocationRelativeTo(null);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        getContentPane().setBackground(UITheme.BG_MAIN);
+        setLayout(new BorderLayout(0, 14));
+        setBackground(UITheme.BG_MAIN);
+        setBorder(new EmptyBorder(16, 20, 16, 20));
 
-        JPanel mainPanel = new JPanel(new BorderLayout(14, 14));
-        mainPanel.setBackground(UITheme.BG_MAIN);
-        mainPanel.setBorder(new EmptyBorder(18, 20, 18, 20));
-
-        // 1. TOP CONTAINER: TITLE + FILTER BAR
+        // 1. TOP CONTAINER: HEADER, STATS, & FILTER
         JPanel topContainer = new JPanel();
         topContainer.setLayout(new BoxLayout(topContainer, BoxLayout.Y_AXIS));
         topContainer.setOpaque(false);
 
-        // Header Title
-        JPanel headerPanel = new JPanel(new BorderLayout(10, 4));
-        headerPanel.setOpaque(false);
+        // Header Title Card
+        RoundedPanel headerCard = new RoundedPanel(16, Color.WHITE);
+        headerCard.setLayout(new BorderLayout(14, 12));
+        headerCard.setBorder(new EmptyBorder(16, 20, 16, 20));
+        headerCard.setShowShadow(true);
 
-        JLabel lblTitle = new JLabel("LỊCH SỬ GIAO DỊCH & SAO KÊ TÀI KHOẢN");
-        lblTitle.setFont(UITheme.FONT_TITLE_XL);
+        JPanel titleBox = new JPanel(new BorderLayout(4, 4));
+        titleBox.setOpaque(false);
+
+        JLabel lblTitle = new JLabel("📜 NHẬT KÝ BIẾN ĐỘNG SỐ DƯ & SAO KÊ TÀI CHÍNH");
+        lblTitle.setFont(UITheme.FONT_TITLE);
         lblTitle.setForeground(UITheme.PRIMARY_DARK);
 
-        JLabel lblSub = new JLabel("Chủ tài khoản: " + account.getFullName()
-                + " | STK: " + account.getAccountNumber()
-                + " | Số dư khả dụng: " + UITheme.MONEY_FORMAT.format(account.getBalance()));
-        lblSub.setFont(UITheme.FONT_BODY);
+        JLabel lblSub = new JLabel("Ghi nhận minh bạch toàn bộ giao dịch chuyển khoản, nhận tiền, nạp/rút tiền, thanh toán cước và tiền lãi tích lũy qua RMI.");
+        lblSub.setFont(UITheme.FONT_SMALL);
         lblSub.setForeground(UITheme.TEXT_MUTED);
 
-        headerPanel.add(lblTitle, BorderLayout.NORTH);
-        headerPanel.add(lblSub, BorderLayout.SOUTH);
-        topContainer.add(headerPanel);
+        titleBox.add(lblTitle, BorderLayout.NORTH);
+        titleBox.add(lblSub, BorderLayout.SOUTH);
+        headerCard.add(titleBox, BorderLayout.NORTH);
+
+        // Stats Row (KPI)
+        JPanel statsRow = new JPanel(new GridLayout(1, 3, 14, 0));
+        statsRow.setOpaque(false);
+        statsRow.setPreferredSize(new Dimension(0, 68));
+
+        lblTotalCount = new JLabel("0 giao dịch", SwingConstants.LEFT);
+        JPanel cardCount = createMiniKpiCard("TỔNG GIAO DỊCH", lblTotalCount, UITheme.PRIMARY);
+
+        lblTotalIn = new JLabel("+0 VNĐ", SwingConstants.LEFT);
+        JPanel cardIn = createMiniKpiCard("TỔNG TIỀN VÀO (+)", lblTotalIn, UITheme.SUCCESS_DARK);
+
+        lblTotalOut = new JLabel("-0 VNĐ", SwingConstants.LEFT);
+        JPanel cardOut = createMiniKpiCard("TỔNG TIỀN RA (-)", lblTotalOut, UITheme.DANGER);
+
+        statsRow.add(cardCount);
+        statsRow.add(cardIn);
+        statsRow.add(cardOut);
+        headerCard.add(statsRow, BorderLayout.CENTER);
+
+        topContainer.add(headerCard);
         topContainer.add(Box.createVerticalStrut(12));
 
         // Filter Bar Card
-        RoundedPanel filterCard = new RoundedPanel(12, Color.WHITE);
-        filterCard.setLayout(new BorderLayout(10, 8));
+        RoundedPanel filterCard = new RoundedPanel(14, Color.WHITE);
+        filterCard.setLayout(new BorderLayout(12, 10));
         filterCard.setBorder(new EmptyBorder(12, 16, 12, 16));
-        filterCard.setShowShadow(false);
+        filterCard.setShowShadow(true);
 
         JPanel filterInputs = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         filterInputs.setOpaque(false);
 
         JLabel lblFrom = new JLabel("Từ ngày:");
         lblFrom.setFont(UITheme.FONT_BODY_BOLD);
-        lblFrom.setForeground(UITheme.TEXT_MAIN);
         txtFromDate = new ModernTextField("yyyy-MM-dd");
-        txtFromDate.setPreferredSize(new Dimension(115, 34));
+        txtFromDate.setPreferredSize(new Dimension(110, 34));
 
         JLabel lblTo = new JLabel("Đến ngày:");
         lblTo.setFont(UITheme.FONT_BODY_BOLD);
-        lblTo.setForeground(UITheme.TEXT_MAIN);
         txtToDate = new ModernTextField("yyyy-MM-dd");
-        txtToDate.setPreferredSize(new Dimension(115, 34));
+        txtToDate.setPreferredSize(new Dimension(110, 34));
 
-        btnFilter = new ModernButton("  Lọc Theo Ngày  ", ModernButton.Style.PRIMARY);
+        btnFilter = new ModernButton("🔍 Lọc", ModernButton.Style.PRIMARY);
         btnFilter.setFont(UITheme.FONT_SMALL_BOLD);
-        btnFilter.setCornerRadius(6);
+        btnFilter.setPreferredSize(new Dimension(75, 34));
         btnFilter.addActionListener(e -> performFilter());
 
-        btnAll = new ModernButton("  Tất Cả  ", ModernButton.Style.SECONDARY);
-        btnAll.setFont(UITheme.FONT_SMALL_BOLD);
-        btnAll.setCornerRadius(6);
+        // Quick date shortcuts
+        btnAll = new ModernButton("Tất cả", ModernButton.Style.SECONDARY);
+        btnAll.setFont(UITheme.FONT_SMALL);
+        btnAll.setPreferredSize(new Dimension(75, 34));
         btnAll.addActionListener(e -> {
             txtFromDate.setText("");
             txtToDate.setText("");
             loadTransactions(null, null);
+        });
+
+        btnToday = new ModernButton("Hôm nay", ModernButton.Style.SECONDARY);
+        btnToday.setFont(UITheme.FONT_SMALL);
+        btnToday.setPreferredSize(new Dimension(80, 34));
+        btnToday.addActionListener(e -> {
+            String todayStr = dateFormat.format(new Date());
+            txtFromDate.setText(todayStr);
+            txtToDate.setText(todayStr);
+            performFilter();
+        });
+
+        btn7Days = new ModernButton("7 ngày qua", ModernButton.Style.SECONDARY);
+        btn7Days.setFont(UITheme.FONT_SMALL);
+        btn7Days.setPreferredSize(new Dimension(90, 34));
+        btn7Days.addActionListener(e -> {
+            Calendar cal = Calendar.getInstance();
+            Date end = cal.getTime();
+            cal.add(Calendar.DAY_OF_YEAR, -7);
+            Date start = cal.getTime();
+            txtFromDate.setText(dateFormat.format(start));
+            txtToDate.setText(dateFormat.format(end));
+            performFilter();
         });
 
         filterInputs.add(lblFrom);
@@ -137,81 +179,90 @@ public class TransactionHistoryForm extends JFrame {
         filterInputs.add(txtToDate);
         filterInputs.add(btnFilter);
         filterInputs.add(btnAll);
-
-        JPanel filterActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
-        filterActions.setOpaque(false);
-
-        btnExportCsv = new ModernButton("  Xuất Sao Kê (CSV)  ", ModernButton.Style.SUCCESS);
-        btnExportCsv.setFont(UITheme.FONT_SMALL_BOLD);
-        btnExportCsv.setCornerRadius(6);
-        btnExportCsv.addActionListener(e -> performExportCsv());
-        filterActions.add(btnExportCsv);
+        filterInputs.add(btnToday);
+        filterInputs.add(btn7Days);
 
         filterCard.add(filterInputs, BorderLayout.WEST);
-        filterCard.add(filterActions, BorderLayout.EAST);
+
+        // Export CSV Action
+        JPanel exportBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+        exportBox.setOpaque(false);
+        btnExportCsv = new ModernButton("📥 Xuất File CSV", ModernButton.Style.SUCCESS);
+        btnExportCsv.setFont(UITheme.FONT_BODY_BOLD);
+        btnExportCsv.setPreferredSize(new Dimension(145, 34));
+        btnExportCsv.addActionListener(e -> performExportCsv());
+        exportBox.add(btnExportCsv);
+
+        filterCard.add(exportBox, BorderLayout.EAST);
         topContainer.add(filterCard);
 
-        mainPanel.add(topContainer, BorderLayout.NORTH);
+        add(topContainer, BorderLayout.NORTH);
 
-        // 2. CENTER: TABLE
-        String[] columns = {"STT", "Mã GD", "Loại Giao Dịch", "TK Gửi", "TK Nhận", "Số Tiền (VNĐ)", "Nội Dung Diễn Giải", "Thời Gian", "Trạng Thái"};
-        tableModel = new DefaultTableModel(columns, 0) {
+        // 2. TABLE CONTAINER: MODERN TABLE OF TRANSACTIONS
+        RoundedPanel tableCard = new RoundedPanel(16, Color.WHITE);
+        tableCard.setLayout(new BorderLayout(0, 8));
+        tableCard.setBorder(new EmptyBorder(14, 14, 14, 14));
+        tableCard.setShowShadow(true);
+
+        String[] columnNames = {
+                "STT", "Mã GD", "Loại Giao Dịch", "Tài Khoản Gửi", "Tài Khoản Nhận",
+                "Số Tiền (VNĐ)", "Nội Dung", "Thời Gian", "Trạng Thái"
+        };
+
+        tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Chỉ xem
+                return false;
             }
         };
 
         table = new JTable(tableModel);
-        table.setFont(UITheme.FONT_BODY);
-        table.setRowHeight(32);
-        table.setGridColor(UITheme.BORDER_COLOR);
-        table.setShowGrid(true);
-        table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        table.setSelectionBackground(UITheme.PRIMARY_LIGHT);
-        table.setSelectionForeground(UITheme.PRIMARY_DARK);
-
-        JTableHeader header = table.getTableHeader();
-        header.setFont(UITheme.FONT_BODY_BOLD);
-        header.setBackground(new Color(241, 245, 249));
-        header.setForeground(UITheme.TEXT_MAIN);
-        header.setPreferredSize(new Dimension(header.getWidth(), 36));
+        UITheme.applyModernTableStyle(table);
 
         // Column widths
         table.getColumnModel().getColumn(0).setPreferredWidth(45);
-        table.getColumnModel().getColumn(1).setPreferredWidth(55);
+        table.getColumnModel().getColumn(1).setPreferredWidth(65);
         table.getColumnModel().getColumn(2).setPreferredWidth(140);
-        table.getColumnModel().getColumn(3).setPreferredWidth(90);
+        table.getColumnModel().getColumn(3).setPreferredWidth(110);
         table.getColumnModel().getColumn(4).setPreferredWidth(110);
-        table.getColumnModel().getColumn(5).setPreferredWidth(110);
-        table.getColumnModel().getColumn(6).setPreferredWidth(210);
+        table.getColumnModel().getColumn(5).setPreferredWidth(140);
+        table.getColumnModel().getColumn(6).setPreferredWidth(220);
         table.getColumnModel().getColumn(7).setPreferredWidth(140);
-        table.getColumnModel().getColumn(8).setPreferredWidth(90);
+        table.getColumnModel().getColumn(8).setPreferredWidth(95);
 
-        // Custom Renderers
-        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
-        centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-        table.getColumnModel().getColumn(0).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(1).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(3).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(4).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(7).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(8).setCellRenderer(centerRenderer);
-
-        // Amount Renderer with colors
+        // Custom Cell Renderers: Color code +/- amounts & status badges
         table.getColumnModel().getColumn(5).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable tbl, Object value, boolean isSelected, boolean hasFocus, int row, int col) {
                 Component c = super.getTableCellRendererComponent(tbl, value, isSelected, hasFocus, row, col);
+                String valStr = value != null ? value.toString() : "";
                 setHorizontalAlignment(SwingConstants.RIGHT);
                 setFont(UITheme.FONT_BODY_BOLD);
-                String valStr = value != null ? value.toString() : "";
-                if (valStr.startsWith("+")) {
-                    setForeground(isSelected ? UITheme.SUCCESS_DARK : UITheme.SUCCESS);
-                } else if (valStr.startsWith("-")) {
-                    setForeground(isSelected ? UITheme.DANGER_DARK : UITheme.DANGER);
-                } else {
-                    setForeground(UITheme.TEXT_MAIN);
+
+                if (!isSelected) {
+                    if (valStr.startsWith("+")) {
+                        c.setForeground(UITheme.SUCCESS_DARK);
+                        c.setBackground(row % 2 == 0 ? new Color(240, 253, 244) : new Color(246, 254, 249));
+                    } else if (valStr.startsWith("-")) {
+                        c.setForeground(UITheme.DANGER);
+                        c.setBackground(row % 2 == 0 ? new Color(254, 242, 242) : new Color(255, 247, 247));
+                    } else {
+                        c.setForeground(UITheme.TEXT_MAIN);
+                        c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(250, 251, 253));
+                    }
+                }
+                return c;
+            }
+        });
+
+        table.getColumnModel().getColumn(8).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl, Object value, boolean isSelected, boolean hasFocus, int row, int col) {
+                Component c = super.getTableCellRendererComponent(tbl, value, isSelected, hasFocus, row, col);
+                setHorizontalAlignment(SwingConstants.CENTER);
+                setFont(UITheme.FONT_SMALL_BOLD);
+                if (!isSelected) {
+                    c.setForeground(UITheme.SUCCESS_DARK);
                 }
                 return c;
             }
@@ -221,26 +272,41 @@ public class TransactionHistoryForm extends JFrame {
         scrollPane.setBorder(BorderFactory.createLineBorder(UITheme.BORDER_COLOR));
         scrollPane.getViewport().setBackground(Color.WHITE);
 
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
+        tableCard.add(scrollPane, BorderLayout.CENTER);
 
-        // 3. BOTTOM: SUMMARY & STATUS
-        JPanel bottomPanel = new JPanel(new BorderLayout(10, 4));
-        bottomPanel.setOpaque(false);
+        // Status bar under table
+        JPanel statusBar = new JPanel(new BorderLayout());
+        statusBar.setOpaque(false);
+        statusBar.setBorder(new EmptyBorder(6, 4, 2, 4));
 
-        lblSummary = new JLabel("Tổng số giao dịch: 0 | Tổng tiền chi: 0 VNĐ | Tổng tiền nhận: 0 VNĐ");
-        lblSummary.setFont(UITheme.FONT_BODY_BOLD);
-        lblSummary.setForeground(UITheme.PRIMARY_DARK);
-
-        lblStatus = new JLabel("Sẵn sàng.", SwingConstants.RIGHT);
+        lblStatus = new JLabel("Dữ liệu sẵn sàng.", SwingConstants.LEFT);
         lblStatus.setFont(UITheme.FONT_SMALL);
         lblStatus.setForeground(UITheme.TEXT_MUTED);
+        statusBar.add(lblStatus, BorderLayout.WEST);
 
-        bottomPanel.add(lblSummary, BorderLayout.WEST);
-        bottomPanel.add(lblStatus, BorderLayout.EAST);
+        tableCard.add(statusBar, BorderLayout.SOUTH);
+        add(tableCard, BorderLayout.CENTER);
+    }
 
-        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+    private JPanel createMiniKpiCard(String title, JLabel valueLabel, Color accentColor) {
+        RoundedPanel card = new RoundedPanel(12, UITheme.BG_INPUT);
+        card.setLayout(new BorderLayout(4, 4));
+        card.setBorder(new EmptyBorder(8, 14, 8, 14));
 
-        add(mainPanel);
+        JLabel lblTitle = new JLabel(title);
+        lblTitle.setFont(UITheme.FONT_SMALL_BOLD);
+        lblTitle.setForeground(UITheme.TEXT_MUTED);
+
+        valueLabel.setFont(UITheme.FONT_TITLE);
+        valueLabel.setForeground(accentColor);
+
+        card.add(lblTitle, BorderLayout.NORTH);
+        card.add(valueLabel, BorderLayout.CENTER);
+        return card;
+    }
+
+    public void refreshData() {
+        performFilter();
     }
 
     private void performFilter() {
@@ -254,59 +320,46 @@ public class TransactionHistoryForm extends JFrame {
 
         Date fromDate = null;
         Date toDate = null;
-
-        // Strict format validation
         String dateRegex = "^\\d{4}-\\d{2}-\\d{2}$";
 
         if (!fromStr.isEmpty()) {
             if (!fromStr.matches(dateRegex)) {
-                JOptionPane.showMessageDialog(this,
-                        "Định dạng 'Từ ngày' không hợp lệ! Vui lòng nhập chuẩn yyyy-MM-dd (VD: 2026-09-01).",
-                        "Sai Định Dạng Ngày", JOptionPane.WARNING_MESSAGE);
-                txtFromDate.requestFocus();
+                JOptionPane.showMessageDialog(this, "Ngày bắt đầu sai định dạng! Vui lòng nhập đúng 'yyyy-MM-dd' (VD: 2026-09-01).", "Lỗi Định Dạng", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             try {
                 fromDate = dateFormat.parse(fromStr);
-            } catch (ParseException e) {
-                JOptionPane.showMessageDialog(this,
-                        "Ngày bắt đầu không tồn tại trong lịch thực tế (VD: ngày 30/02)!",
-                        "Ngày Không Hợp Lệ", JOptionPane.WARNING_MESSAGE);
+            } catch (ParseException ex) {
+                JOptionPane.showMessageDialog(this, "Ngày bắt đầu không hợp lệ (không tồn tại trong lịch)!", "Lỗi Ngày Tháng", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         }
 
         if (!toStr.isEmpty()) {
             if (!toStr.matches(dateRegex)) {
-                JOptionPane.showMessageDialog(this,
-                        "Định dạng 'Đến ngày' không hợp lệ! Vui lòng nhập chuẩn yyyy-MM-dd (VD: 2026-09-30).",
-                        "Sai Định Dạng Ngày", JOptionPane.WARNING_MESSAGE);
-                txtToDate.requestFocus();
+                JOptionPane.showMessageDialog(this, "Ngày kết thúc sai định dạng! Vui lòng nhập đúng 'yyyy-MM-dd' (VD: 2026-09-30).", "Lỗi Định Dạng", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             try {
                 toDate = dateFormat.parse(toStr);
-            } catch (ParseException e) {
-                JOptionPane.showMessageDialog(this,
-                        "Ngày kết thúc không tồn tại trong lịch thực tế!",
-                        "Ngày Không Hợp Lệ", JOptionPane.WARNING_MESSAGE);
+            } catch (ParseException ex) {
+                JOptionPane.showMessageDialog(this, "Ngày kết thúc không hợp lệ (không tồn tại trong lịch)!", "Lỗi Ngày Tháng", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         }
 
         if (fromDate != null && toDate != null && fromDate.after(toDate)) {
-            JOptionPane.showMessageDialog(this,
-                    "Khoảng ngày không hợp lệ: 'Từ ngày' không được lớn hơn 'Đến ngày'!",
-                    "Lỗi Khoảng Thời Gian", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Ngày bắt đầu không được lớn hơn ngày kết thúc!", "Lỗi Khoảng Thời Gian", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         loadTransactions(fromDate, toDate);
     }
 
-    private void loadTransactions(Date fromDate, Date toDate) {
-        setLoadingState(true);
+    public void loadTransactions(Date fromDate, Date toDate) {
+        btnFilter.setEnabled(false);
         lblStatus.setText("Đang tải dữ liệu từ Server...");
+        lblStatus.setForeground(UITheme.PRIMARY);
 
         SwingWorker<List<Transaction>, Void> worker = new SwingWorker<>() {
             @Override
@@ -320,148 +373,168 @@ public class TransactionHistoryForm extends JFrame {
 
             @Override
             protected void done() {
-                setLoadingState(false);
+                btnFilter.setEnabled(true);
                 try {
                     List<Transaction> list = get();
                     currentTransactions.clear();
                     if (list != null) {
                         currentTransactions.addAll(list);
                     }
-                    updateTableData(currentTransactions);
-                    lblStatus.setText("Tải dữ liệu hoàn tất lúc " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
-                } catch (InterruptedException | ExecutionException e) {
-                    lblStatus.setText("Lỗi kết nối.");
-                    JOptionPane.showMessageDialog(TransactionHistoryForm.this,
-                            "Không thể tải lịch sử giao dịch: " + e.getMessage(),
-                            "Lỗi Tải Dữ Liệu",
-                            JOptionPane.ERROR_MESSAGE);
+                    displayTransactions(currentTransactions);
+                    lblStatus.setText("Đã tải xong " + currentTransactions.size() + " bản ghi lúc " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
+                    lblStatus.setForeground(UITheme.TEXT_MUTED);
+                } catch (InterruptedException | ExecutionException ex) {
+                    lblStatus.setText("Lỗi kết nối Server: " + ex.getMessage());
+                    lblStatus.setForeground(UITheme.DANGER);
                 }
             }
         };
         worker.execute();
     }
 
-    private void updateTableData(List<Transaction> list) {
+    private void displayTransactions(List<Transaction> list) {
         tableModel.setRowCount(0);
-
         double totalIn = 0;
         double totalOut = 0;
         int stt = 1;
 
+        String myAcc = account.getAccountNumber();
+
         for (Transaction tx : list) {
-            String myAcc = account.getAccountNumber();
             boolean isSender = myAcc.equalsIgnoreCase(tx.getFromAccount());
             boolean isReceiver = myAcc.equalsIgnoreCase(tx.getToAccount());
 
-            String typeDisplay = formatTransactionType(tx.getTransactionType(), isSender, isReceiver);
-            String amountDisplay;
-
-            if (isSender) {
-                amountDisplay = "-" + String.format("%,.0f", tx.getAmount());
+            String amountStr;
+            if (isReceiver && !isSender) {
+                amountStr = "+" + UITheme.MONEY_FORMAT.format(tx.getAmount());
+                totalIn += tx.getAmount();
+            } else if (isSender && !isReceiver) {
+                amountStr = "-" + UITheme.MONEY_FORMAT.format(tx.getAmount());
                 totalOut += tx.getAmount();
             } else {
-                amountDisplay = "+" + String.format("%,.0f", tx.getAmount());
-                totalIn += tx.getAmount();
+                amountStr = UITheme.MONEY_FORMAT.format(tx.getAmount());
             }
 
             String timeStr = tx.getCreatedAt() != null ? timestampFormat.format(tx.getCreatedAt()) : "";
+            String typeDisplay = formatTransactionType(tx.getTransactionType());
 
             tableModel.addRow(new Object[]{
                     stt++,
                     "#" + tx.getId(),
                     typeDisplay,
-                    tx.getFromAccount() != null ? tx.getFromAccount() : "-",
-                    tx.getToAccount() != null ? tx.getToAccount() : "-",
-                    amountDisplay,
-                    tx.getDescription() != null ? tx.getDescription() : "",
+                    tx.getFromAccount() != null ? tx.getFromAccount() : "---",
+                    tx.getToAccount() != null ? tx.getToAccount() : "---",
+                    amountStr,
+                    tx.getDescription(),
                     timeStr,
-                    tx.getStatus()
+                    "THÀNH CÔNG"
             });
         }
 
-        lblSummary.setText(String.format("Tổng số GD: %d  |  Tổng chi: %,.0f VNĐ  |  Tổng thu: %,.0f VNĐ",
-                list.size(), totalOut, totalIn));
+        lblTotalCount.setText(list.size() + " giao dịch");
+        lblTotalIn.setText("+" + UITheme.MONEY_FORMAT.format(totalIn));
+        lblTotalOut.setText("-" + UITheme.MONEY_FORMAT.format(totalOut));
     }
 
-    private String formatTransactionType(String type, boolean isSender, boolean isReceiver) {
-        if ("THANH_TOAN_HOA_DON".equalsIgnoreCase(type)) {
-            return "Thanh Toán Hóa Đơn";
-        } else if ("CHUYEN_TIEN".equalsIgnoreCase(type)) {
-            if (isSender) return "Chuyển Tiền Đi";
-            if (isReceiver) return "Nhận Tiền Đến";
-            return "Chuyển Tiền";
-        } else if ("TIET_KIEM".equalsIgnoreCase(type)) {
-            return "Gửi Tiết Kiệm";
+    private String formatTransactionType(String type) {
+        if (type == null) return "KHÁC";
+        switch (type.toUpperCase()) {
+            case "CHUYEN_TIEN":
+                return "💸 Chuyển Khoản";
+            case "THANH_TOAN_HOA_DON":
+                return "🧾 Thanh Toán Cước";
+            case "MO_SO_TIET_KIEM":
+                return "💰 Mở Tiết Kiệm";
+            case "TAT_TOAN_TIET_KIEM":
+                return "📥 Tất Toán Tiết Kiệm";
+            case "NAP_TIEN":
+                return "💳 Nạp Tiền";
+            case "RUT_TIEN":
+                return "🏧 Rút Tiền";
+            default:
+                return type;
         }
-        return type != null ? type : "Giao Dịch";
-    }
-
-    private void setLoadingState(boolean loading) {
-        btnFilter.setEnabled(!loading);
-        btnAll.setEnabled(!loading);
-        btnExportCsv.setEnabled(!loading);
     }
 
     private void performExportCsv() {
         if (currentTransactions.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Không có dữ liệu giao dịch nào để xuất sao kê!", "Thông Báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Không có dữ liệu giao dịch nào để xuất sao kê!", "Thông Báo", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Lưu Sao Kê Giao Dịch Dạng File CSV");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("Tệp CSV (*.csv)", "csv"));
-        String defaultFileName = "SaoKe_" + account.getAccountNumber() + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".csv";
-        fileChooser.setSelectedFile(new File(defaultFileName));
+        fileChooser.setDialogTitle("Lưu Báo Cáo Sao Kê (CSV)");
+        fileChooser.setSelectedFile(new File("SaoKe_" + account.getAccountNumber() + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".csv"));
+        fileChooser.setFileFilter(new FileNameExtensionFilter("CSV Files (*.csv)", "csv"));
 
         int userSelection = fileChooser.showSaveDialog(this);
-        if (userSelection == JFileChooser.APPROVE_OPTION) {
-            File fileToSave = fileChooser.getSelectedFile();
-            if (!fileToSave.getName().toLowerCase().endsWith(".csv")) {
-                fileToSave = new File(fileToSave.getAbsolutePath() + ".csv");
-            }
-
-            try (FileOutputStream fos = new FileOutputStream(fileToSave);
-                 OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8)) {
-
-                // UTF-8 BOM để Excel trên Windows hiển thị đúng font tiếng Việt không bị lỗi font
-                fos.write(0xEF);
-                fos.write(0xBB);
-                fos.write(0xBF);
-
-                // CSV Header
-                osw.write("STT,Ma GD,Loai Giao Dich,Tai Khoan Gui,Tai Khoan Nhan,So Tien (VND),Dien Giai,Thoi Gian,Trang Thai\n");
-
-                for (int i = 0; i < tableModel.getRowCount(); i++) {
-                    StringBuilder line = new StringBuilder();
-                    for (int j = 0; j < tableModel.getColumnCount(); j++) {
-                        Object val = tableModel.getValueAt(i, j);
-                        String str = val != null ? val.toString() : "";
-                        // Escape CSV
-                        if (str.contains(",") || str.contains("\"") || str.contains("\n")) {
-                            str = "\"" + str.replace("\"", "\"\"") + "\"";
-                        }
-                        line.append(str);
-                        if (j < tableModel.getColumnCount() - 1) {
-                            line.append(",");
-                        }
-                    }
-                    line.append("\n");
-                    osw.write(line.toString());
-                }
-
-                osw.flush();
-                JOptionPane.showMessageDialog(this,
-                        "Xuất sao kê CSV thành công!\nĐường dẫn: " + fileToSave.getAbsolutePath(),
-                        "Thành Công",
-                        JOptionPane.INFORMATION_MESSAGE);
-
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this,
-                        "Lỗi khi ghi tệp CSV: " + ex.getMessage(),
-                        "Lỗi Xuất Tệp",
-                        JOptionPane.ERROR_MESSAGE);
-            }
+        if (userSelection != JFileChooser.APPROVE_OPTION) {
+            return;
         }
+
+        File fileToSave = fileChooser.getSelectedFile();
+        if (!fileToSave.getName().toLowerCase().endsWith(".csv")) {
+            fileToSave = new File(fileToSave.getAbsolutePath() + ".csv");
+        }
+
+        try (FileOutputStream fos = new FileOutputStream(fileToSave);
+             OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8)) {
+
+            // Ghi UTF-8 BOM để Excel hiển thị đúng dấu tiếng Việt
+            fos.write(0xEF);
+            fos.write(0xBB);
+            fos.write(0xBF);
+
+            osw.write("BÁO CÁO SAO KÊ GIAO DỊCH TÀI KHOẢN NGÂN HÀNG\n");
+            osw.write("Chủ tài khoản," + escapeCsv(account.getFullName()) + "\n");
+            osw.write("Số tài khoản," + escapeCsv(account.getAccountNumber()) + "\n");
+            osw.write("Thời điểm xuất file," + escapeCsv(new SimpleDateFormat("dd/MM/yyyy HH:mm:ss").format(new Date())) + "\n\n");
+
+            osw.write("STT,Mã GD,Loại Giao Dịch,Tài Khoản Gửi,Tài Khoản Nhận,Dấu,Số Tiền (VNĐ),Nội Dung,Thời Gian,Trạng Thái\n");
+
+            int stt = 1;
+            String myAcc = account.getAccountNumber();
+
+            for (Transaction tx : currentTransactions) {
+                boolean isSender = myAcc.equalsIgnoreCase(tx.getFromAccount());
+                boolean isReceiver = myAcc.equalsIgnoreCase(tx.getToAccount());
+                String amtPrefix = (isReceiver && !isSender) ? "+" : ((isSender && !isReceiver) ? "-" : "");
+
+                String row = String.format("%d,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+                        stt++,
+                        escapeCsv(String.valueOf(tx.getId())),
+                        escapeCsv(formatTransactionType(tx.getTransactionType())),
+                        escapeCsv(tx.getFromAccount() != null ? tx.getFromAccount() : ""),
+                        escapeCsv(tx.getToAccount() != null ? tx.getToAccount() : ""),
+                        amtPrefix,
+                        String.format("%.0f", tx.getAmount()),
+                        escapeCsv(tx.getDescription() != null ? tx.getDescription() : ""),
+                        escapeCsv(tx.getCreatedAt() != null ? timestampFormat.format(tx.getCreatedAt()) : ""),
+                        "THANH_CONG"
+                );
+                osw.write(row);
+            }
+
+            osw.flush();
+            JOptionPane.showMessageDialog(this,
+                    "Xuất sao kê giao dịch thành công!\nĐường dẫn: " + fileToSave.getAbsolutePath(),
+                    "Xuất File Thành Công",
+                    JOptionPane.INFORMATION_MESSAGE);
+
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Lỗi khi lưu file CSV: " + ex.getMessage(),
+                    "Lỗi Xuất File",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private String escapeCsv(String value) {
+        if (value == null) return "";
+        if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            value = value.replace("\"", "\"\"");
+            return "\"" + value + "\"";
+        }
+        return value;
     }
 }
