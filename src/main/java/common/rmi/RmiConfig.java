@@ -1,208 +1,127 @@
 package common.rmi;
 
-import java.io.IOException;
-import java.net.*;
-import java.rmi.registry.LocateRegistry;
-import java.rmi.registry.Registry;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.List;
+import java.io.IOException;            // Xử lý ngoại lệ vào/ra khi kiểm tra cổng Socket
+import java.net.Inet4Address;          // Lớp đại diện cho địa chỉ IPv4 (dạng 192.168.x.x)
+import java.net.InetAddress;           // Lớp đại diện cho địa chỉ mạng IP nói chung
+import java.net.NetworkInterface;      // Lớp đại diện cho card mạng vật lý (Wi-Fi, Ethernet)
+import java.net.ServerSocket;          // Socket máy chủ dùng để kiểm tra cổng có bị chiếm dụng không
+import java.rmi.registry.LocateRegistry; // Dùng để kết nối hoặc tra cứu bộ danh bạ RMI Registry
+import java.rmi.registry.Registry;       // Giao diện điều khiển bộ danh bạ RMI Registry
+import java.util.Collections;          // Tiện ích chuyển Enumeration thành danh sách để lặp for-each
+import java.util.Enumeration;          // Kiểu tập hợp các phần tử theo chuẩn mạng cũ của Java
 
 /**
- * Cấu hình chuẩn kiến trúc mạng phân tán RMI cho toàn hệ thống e-Banking:
- * 1. Cấp phát cổng CỐ ĐỊNH (Fixed Ports) để mở tường lửa (Windows Firewall),
- *    thay thế hoàn toàn cổng động (port 0) bị hệ điều hành bốc ngẫu nhiên.
- * 2. Thiết lập IP máy chủ và IP Client Callback (thuộc tính java.rmi.server.hostname)
- *    để truyền Stub chính xác giữa 2 hoặc nhiều máy tính trong mạng LAN/VPN.
- * 3. Hỗ trợ tự động dò tìm IP card mạng thật (ưu tiên Wi-Fi, Ethernet, Radmin VPN, bỏ qua card ảo VirtualBox).
+ * Lớp cấu hình mạng cho toàn bộ hệ thống e-Banking RMI:
+ * - Cố định 3 cổng TCP (1099, 1098, 1097) để mở tường lửa Windows dễ dàng.
+ * - Tự động dò tìm địa chỉ IPv4 LAN / Wi-Fi đang kết nối của máy tính.
+ * - Hỗ trợ cấp phát cổng an toàn và đo độ trễ mạng (Ping) trên giao diện.
  */
 public class RmiConfig {
 
     // =========================================================================
-    // 1. DANH MỤC CỔNG CỐ ĐỊNH (FIXED PORTS ALLOCATION)
+    // 1. DANH MỤC CÁC CỔNG CỐ ĐỊNH (FIXED PORTS)
     // =========================================================================
-    /** Cổng RMI Registry mặc định theo chuẩn Java RMI (1099) */
+    // Cổng RMI Registry mặc định theo chuẩn Java RMI để đăng ký và tìm kiếm dịch vụ
     public static final int DEFAULT_REGISTRY_PORT = 1099;
 
-    /** Cổng RMI Server Object (BankServiceImpl) cố định (1098) - Tránh cổng động 0 */
+    // Cổng cố định cho Server Object (BankServiceImpl) - Tránh bị hệ điều hành bốc cổng ngẫu nhiên
     public static final int DEFAULT_SERVER_PORT = 1098;
 
-    /** Cổng RMI Client Callback (ClientCallbackImpl) cố định (1097) - Tránh cổng động 0 */
+    // Cổng cố định cho Client Callback (ClientCallbackImpl) để Server gọi ngược về máy Client
     public static final int DEFAULT_CALLBACK_PORT = 1097;
 
-    /** Tên định danh dịch vụ RMI đăng ký trên Registry */
+    // Tên định danh của dịch vụ ngân hàng đăng ký trên bộ danh bạ Registry
     public static final String SERVICE_NAME = "BankService";
 
-    /** Thuộc tính hệ thống định nghĩa IP trong Remote Stub */
+    // Thuộc tính hệ thống của JVM dùng để định nghĩa địa chỉ IP nhúng vào bên trong Remote Stub
     public static final String PROP_SERVER_HOSTNAME = "java.rmi.server.hostname";
 
     // =========================================================================
-    // 2. THIẾT LẬP HOSTNAME & IP CHO RMI STUB
+    // 2. THIẾT LẬP IP CHO REMOTE STUB (TRUYỀN ĐÚNG IP QUA MẠNG WI-FI / LAN)
     // =========================================================================
     /**
-     * Thiết lập địa chỉ IP định danh cho RMI Stub.
+     * Gán IP mạng thật vào thuộc tính hệ thống để Client từ xa nhận đúng địa chỉ gọi về Server
      */
     public static void setRmiHostname(String ip) {
+        // Kiểm tra chuỗi IP truyền vào không được null và không được để trống
         if (ip != null && !ip.trim().isEmpty()) {
+            // Gán giá trị IP vào biến môi trường java.rmi.server.hostname của JVM
             System.setProperty(PROP_SERVER_HOSTNAME, ip.trim());
-            System.out.println(">> [RMI NETWORK] Da thiet lap " + PROP_SERVER_HOSTNAME + " = " + ip.trim());
         }
-    }
-
-    public static String getRmiHostname() {
-        return System.getProperty(PROP_SERVER_HOSTNAME, "127.0.0.1");
     }
 
     // =========================================================================
-    // 3. TỰ ĐỘNG DÒ TÌM IP CÁC CARD MẠNG (WIFI, ETHERNET, VPN)
+    // 3. TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
     // =========================================================================
-    public static class NetworkInterfaceInfo {
-        private final String displayName;
-        private final String ipAddress;
-        private final boolean isPreferred;
-
-        public NetworkInterfaceInfo(String displayName, String ipAddress, boolean isPreferred) {
-            this.displayName = displayName;
-            this.ipAddress = ipAddress;
-            this.isPreferred = isPreferred;
-        }
-
-        public String getDisplayName() {
-            return displayName;
-        }
-
-        public String getIpAddress() {
-            return ipAddress;
-        }
-
-        public boolean isPreferred() {
-            return isPreferred;
-        }
-
-        @Override
-        public String toString() {
-            return displayName + " (" + ipAddress + ")";
-        }
-    }
-
     /**
-     * Dò tìm toàn bộ các địa chỉ IPv4 khả dụng trên các card mạng của máy tính
-     * Tự động loại trừ card ảo VirtualBox / VMware để không chọn nhầm dải 192.168.56.x
+     * Quét các card mạng trên máy tính và lấy địa chỉ IPv4 thật đang kết nối Wi-Fi/LAN
      */
-    public static List<NetworkInterfaceInfo> getAvailableNetworkInterfaces() {
-        List<NetworkInterfaceInfo> list = new ArrayList<>();
+    public static String getLocalIp() {
         try {
+            // Lấy danh sách toàn bộ các card mạng (NetworkInterface) có trên máy tính
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             if (interfaces != null) {
+                // Duyệt qua từng card mạng tìm được
                 for (NetworkInterface iface : Collections.list(interfaces)) {
+                    // Bỏ qua card mạng đang bị tắt (!isUp) hoặc card loopback nội bộ (127.0.0.1)
                     if (!iface.isUp() || iface.isLoopback()) continue;
 
-                    String ifaceName = iface.getDisplayName();
-                    if (isVirtualAdapter(ifaceName)) continue;
-
-                    Enumeration<InetAddress> addresses = iface.getInetAddresses();
-                    for (InetAddress addr : Collections.list(addresses)) {
+                    // Duyệt qua tất cả các địa chỉ IP được gán cho card mạng này
+                    for (InetAddress addr : Collections.list(iface.getInetAddresses())) {
+                        // Chỉ lấy địa chỉ IPv4 và không phải là địa chỉ loopback
                         if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                            String ip = addr.getHostAddress();
-                            if (ip.startsWith("192.168.56.")) continue; // Bỏ qua VirtualBox
-                            boolean preferred = isLanOrVpnIp(ip);
-                            list.add(new NetworkInterfaceInfo(cleanInterfaceName(ifaceName), ip, preferred));
+                            // Trả về chuỗi IP mạng thật đầu tiên tìm thấy (ví dụ: 192.168.1.15)
+                            return addr.getHostAddress();
                         }
                     }
                 }
             }
-        } catch (Exception e) {
-            System.err.println("Loi do tim card mang: " + e.getMessage());
+        } catch (Exception ignored) {
+            // Bỏ qua lỗi nếu không đọc được card mạng
         }
-
-        // Luôn có fallback 127.0.0.1
-        list.add(new NetworkInterfaceInfo("Loopback / Localhost", "127.0.0.1", false));
-        return list;
-    }
-
-    private static boolean isVirtualAdapter(String name) {
-        if (name == null) return false;
-        String lower = name.toLowerCase();
-        return lower.contains("virtualbox") ||
-               lower.contains("host-only") ||
-               lower.contains("vmware") ||
-               lower.contains("vethernet");
+        // Trả về Localhost làm giá trị dự phòng nếu máy tính đang ngắt toàn bộ kết nối mạng
+        return "127.0.0.1";
     }
 
     /**
-     * Lấy địa chỉ IP ưu tiên nhất của máy tính (Ưu tiên card Wi-Fi thật)
+     * Hàm phụ gọi lại getLocalIp() để tương thích với các màn hình LoginForm, RegisterForm
      */
     public static String getBestLocalIp() {
-        List<NetworkInterfaceInfo> list = getAvailableNetworkInterfaces();
-        // Ưu tiên card Wi-Fi thật
-        for (NetworkInterfaceInfo info : list) {
-            if (info.getDisplayName().toLowerCase().contains("wi-fi") || info.getDisplayName().toLowerCase().contains("wireless")) {
-                return info.getIpAddress();
-            }
-        }
-        for (NetworkInterfaceInfo info : list) {
-            if (info.isPreferred()) {
-                return info.getIpAddress();
-            }
-        }
-        return list.get(0).getIpAddress();
-    }
-
-    private static boolean isLanOrVpnIp(String ip) {
-        if (ip == null) return false;
-        return ip.startsWith("192.168.") ||
-               ip.startsWith("10.") ||
-               ip.startsWith("172.") ||
-               ip.startsWith("26."); // Radmin VPN phổ biến khi sinh viên demo từ xa
-    }
-
-    private static String cleanInterfaceName(String name) {
-        if (name == null) return "Network Adapter";
-        if (name.toLowerCase().contains("wi-fi") || name.toLowerCase().contains("wireless") || name.toLowerCase().contains("802.11")) {
-            return "Wi-Fi Wireless";
-        }
-        if (name.toLowerCase().contains("ethernet")) {
-            return "Ethernet LAN";
-        }
-        if (name.toLowerCase().contains("radmin")) {
-            return "Radmin VPN";
-        }
-        if (name.toLowerCase().contains("hamachi")) {
-            return "Hamachi VPN";
-        }
-        if (name.toLowerCase().contains("tailscale")) {
-            return "Tailscale VPN";
-        }
-        return name;
+        return getLocalIp();
     }
 
     // =========================================================================
-    // 4. KIỂM TRA TRẠNG THÁI CỔNG & ĐỘ TRỄ KẾT NỐI (PING & HEALTH CHECK)
+    // 4. CẤP PHÁT CỔNG AN TOÀN CHỐNG XUNG ĐỘT (PORT ALLOCATION)
     // =========================================================================
-    public static boolean isPortAvailable(int port) {
-        if (port <= 0) return true;
-        try (ServerSocket ss = new ServerSocket(port)) {
-            ss.setReuseAddress(true);
-            return true;
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
+    /**
+     * Cấp phát cổng an toàn: Nếu cổng 1097 đã bị chiếm thì tự bốc cổng ngẫu nhiên 0 để không bị crash
+     */
     public static int allocateSafePort(int preferredPort) {
+        // Nếu cổng yêu cầu <= 0 thì cho phép hệ thống tự bốc cổng ngẫu nhiên 0
         if (preferredPort <= 0) return 0;
-        if (isPortAvailable(preferredPort)) {
+
+        // Thử mở một ServerSocket trên cổng yêu cầu để kiểm tra cổng có đang rảnh không
+        try (ServerSocket ss = new ServerSocket(preferredPort)) {
+            // Cho phép tái sử dụng địa chỉ cổng nếu vừa đóng
+            ss.setReuseAddress(true);
+            // Cổng hoàn toàn rảnh rỗi -> Sử dụng đúng số cổng này (ví dụ: 1097)
             return preferredPort;
+        } catch (IOException e) {
+            // Cổng đã bị tiến trình khác chiếm dụng -> Trả về 0 để RMI tự chọn cổng ngẫu nhiên
+            return 0;
         }
-        System.out.println(">> [PORT WARNING] Cong " + preferredPort + " da bi chiem dung, tu dong cap phat cong dong 0.");
-        return 0;
     }
 
+    // =========================================================================
+    // 5. ĐỐI TƯỢNG VÀ HÀM ĐO ĐỘ TRỄ KẾT NỐI (PING & HEALTH CHECK)
+    // =========================================================================
+    /**
+     * Lớp đóng gói kết quả kiểm tra kết nối mạng RMI
+     */
     public static class PingResult {
-        public final boolean success;
-        public final long latencyMs;
-        public final String message;
+        public final boolean success; // Trạng thái: true nếu kết nối thành công, false nếu thất bại
+        public final long latencyMs;  // Độ trễ phản hồi tính bằng mili-giây (ms)
+        public final String message;  // Chuỗi thông báo trạng thái hiển thị lên giao diện
 
         public PingResult(boolean success, long latencyMs, String message) {
             this.success = success;
@@ -211,39 +130,31 @@ public class RmiConfig {
         }
     }
 
-    public static PingResult pingServer(String host, int port, int timeoutMs) {
-        long start = System.currentTimeMillis();
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), timeoutMs);
-            long latency = System.currentTimeMillis() - start;
-            return new PingResult(true, latency, "Ket noi TCP cong " + port + " thanh cong (" + latency + "ms)");
-        } catch (Exception e) {
-            long latency = System.currentTimeMillis() - start;
-            return new PingResult(false, latency, "Khong the ket noi: " + e.getMessage());
-        }
-    }
-
+    /**
+     * Thử kết nối tới RMI Registry của Server và đo độ trễ (phục vụ nút bấm Ping trên LoginForm)
+     */
     public static PingResult testRmiService(String host, int registryPort) {
+        // Ghi lại mốc thời gian bắt đầu gửi yêu cầu kiểm tra (mili-giây)
         long start = System.currentTimeMillis();
         try {
+            // Thử kết nối tới bộ danh bạ RMI Registry tại địa chỉ IP và Cổng chỉ định
             Registry registry = LocateRegistry.getRegistry(host, registryPort);
-            String[] list = registry.list();
-            boolean found = false;
-            for (String s : list) {
+
+            // Quét danh sách các tên dịch vụ đã được Server đăng ký trên Registry
+            for (String s : registry.list()) {
+                // Nếu tìm thấy đúng tên dịch vụ "BankService"
                 if (SERVICE_NAME.equals(s)) {
-                    found = true;
-                    break;
+                    // Tính độ trễ mạng = thời gian hiện tại - thời gian bắt đầu
+                    long latency = System.currentTimeMillis() - start;
+                    // Trả về kết quả thành công kèm số mili-giây
+                    return new PingResult(true, latency, "Dịch vụ '" + SERVICE_NAME + "' online (" + latency + "ms)");
                 }
             }
-            long latency = System.currentTimeMillis() - start;
-            if (found) {
-                return new PingResult(true, latency, "Dich vu '" + SERVICE_NAME + "' dang truc tuyen (" + latency + "ms)");
-            } else {
-                return new PingResult(false, latency, "Registry online nhung chua bind dich vu '" + SERVICE_NAME + "'");
-            }
+            // Kết nối được Registry nhưng Server chưa kịp đăng ký tên dịch vụ
+            return new PingResult(false, System.currentTimeMillis() - start, "Registry online nhưng chưa bind " + SERVICE_NAME);
         } catch (Exception e) {
-            long latency = System.currentTimeMillis() - start;
-            return new PingResult(false, latency, "Loi ket noi RMI Registry: " + e.getMessage());
+            // Bị lỗi mạng, sai địa chỉ IP, Server chưa bật hoặc bị tường lửa chặn
+            return new PingResult(false, System.currentTimeMillis() - start, "Lỗi: " + e.getMessage());
         }
     }
 }

@@ -9,13 +9,11 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.List;
 
 /**
- * Máy Chủ eBanking RMI Server - Triển khai mạng phân tán thực tế (Production LAN / VPN Ready)
- * 1. Cấp phát cổng CỐ ĐỊNH: Registry (1099), Service Object (1098).
- * 2. Thiết lập java.rmi.server.hostname với IP LAN thật để Client từ xa gọi được.
- * 3. Hỗ trợ mở tường lửa (Windows Firewall) không bị chặn cổng động.
+ * Máy Chủ eBanking RMI Server:
+ * 1. Cấp phát cổng cố định: Registry (1099), Service Object (1098).
+ * 2. Thiết lập java.rmi.server.hostname với IP LAN / Wi-Fi để Client kết nối.
  */
 public class ServerMain {
 
@@ -39,19 +37,9 @@ public class ServerMain {
             }
         }
 
-        // 2. Dò tìm và hiển thị toàn bộ danh sách địa chỉ IP trên các card mạng của máy chủ
-        List<RmiConfig.NetworkInterfaceInfo> interfaces = RmiConfig.getAvailableNetworkInterfaces();
-        System.out.println(">> [DANH SÁCH CARD MẠNG KHẢ DỤNG TRÊN MÁY CHỦ]:");
-        for (int i = 0; i < interfaces.size(); i++) {
-            RmiConfig.NetworkInterfaceInfo info = interfaces.get(i);
-            String mark = info.isPreferred() ? " [★ KHUYÊN DÙNG CHO LAN/VPN]" : "";
-            System.out.printf("   [%d] %-22s: %-15s%s%n", (i + 1), info.getDisplayName(), info.getIpAddress(), mark);
-        }
-
-        // Chọn IP hoạt động: Ưu tiên tham số dòng lệnh -> Best LAN IP
-        String selectedIp = (configuredIp != null && !configuredIp.isEmpty()) ? configuredIp : RmiConfig.getBestLocalIp();
-        System.out.println("---------------------------------------------------------------------------------");
-        System.out.println(">> [CẤU HÌNH IP MÁY CHỦ] java.rmi.server.hostname = " + selectedIp);
+        // 2. Lấy IP LAN / Wi-Fi của máy chủ
+        String selectedIp = (configuredIp != null && !configuredIp.isEmpty()) ? configuredIp : RmiConfig.getLocalIp();
+        System.out.println(">> [IP MÁY CHỦ] java.rmi.server.hostname = " + selectedIp);
         RmiConfig.setRmiHostname(selectedIp);
 
         // 3. Khởi tạo Database MariaDB/MySQL tự động
@@ -65,7 +53,7 @@ public class ServerMain {
             System.err.println(">> Hãy đảm bảo XAMPP/MySQL đang bật (Port 3306).");
         }
 
-        // 4. Khởi tạo RMI Registry và Service Object trên CỔNG CỐ ĐỊNH (Fixed Ports)
+        // 4. Khởi tạo RMI Registry và Service Object trên cổng cố định
         System.out.println("---------------------------------------------------------------------------------");
         System.out.println(">> [QUY HOẠCH CỔNG MẠNG CỐ ĐỊNH CHỐNG TƯỜNG LỬA (FIREWALL)]:");
         System.out.println("   • Cổng RMI Registry (Tra cứu)     : " + registryPort + " (TCP)");
@@ -74,7 +62,6 @@ public class ServerMain {
         System.out.println("---------------------------------------------------------------------------------");
 
         try {
-            // Khởi tạo RMI Registry trên registryPort
             Registry registry;
             try {
                 registry = LocateRegistry.createRegistry(registryPort);
@@ -84,10 +71,7 @@ public class ServerMain {
                 System.out.println(">> [RMI REGISTRY] Sử dụng Registry đã có sẵn trên cổng: " + registryPort);
             }
 
-            // Khởi tạo Service Object với cổng CỐ ĐỊNH servicePort
             IBankService bankService = new BankServiceImpl(servicePort);
-
-            // Rebind dịch vụ với tên "BankService"
             registry.rebind(RmiConfig.SERVICE_NAME, bankService);
 
             System.out.println(">> [RMI SERVICE] Dịch vụ '" + RmiConfig.SERVICE_NAME + "' đã BIND thành công!");
@@ -98,13 +82,9 @@ public class ServerMain {
             System.out.println("     1. Máy Client mở ClientMain");
             System.out.println("     2. Nhập địa chỉ máy chủ: " + selectedIp);
             System.out.println("     3. Cổng Registry       : " + registryPort);
-            System.out.println("     4. Tài khoản demo      : usera / 123456 (Khách hàng) hoặc admin / admin123 (Quản trị)");
-            System.out.println("  🛡️ ĐẢM BẢO TƯỜNG LỬA:");
-            System.out.println("     • Trên máy SERVER: Mở Inbound Rule cho cổng TCP " + registryPort + ", " + servicePort);
-            System.out.println("     • Trên máy CLIENT: Mở Inbound Rule cho cổng TCP " + RmiConfig.DEFAULT_CALLBACK_PORT);
+            System.out.println("     4. Tài khoản demo      : usera / 123456 hoặc admin / admin123");
             System.out.println("=================================================================================\n");
 
-            // Đăng ký shutdown hook để dọn dẹp
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 System.out.println("\n>> Đang dừng eBanking RMI Server an toàn...");
             }));

@@ -7,13 +7,13 @@ public class Transaction implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private int id;
-    private String transactionType; // CHUYEN_TIEN, NHAN_TIEN, THANH_TOAN_HOA_DON, TIET_KIEM
+    private String transactionType; // CHUYEN_TIEN, NAP_TIEN, RUT_TIEN, THANH_TOAN_HOA_DON, MO_SO_TIET_KIEM, TAT_TOAN_TIET_KIEM
     private String fromAccount;
     private String toAccount;
     private double amount;
     private String description;
     private Timestamp createdAt;
-    private String status = "THÀNH CÔNG";
+    private String status = "THÀNH CÔNG";   // Mặc định THÀNH CÔNG vì giao dịch lỗi sẽ rollback(), không lưu vào DB
 
     public Transaction() {}
 

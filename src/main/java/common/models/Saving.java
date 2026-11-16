@@ -8,11 +8,11 @@ public class Saving implements Serializable {
 
     private int id;
     private String accountNumber;
-    private double depositAmount;
-    private double interestRate; // % mỗi chu kỳ
-    private int termPeriod;      // Chu kỳ tính lãi (tính bằng giây để dễ demo trực tiếp)
-    private double accumulatedInterest;
-    private String status;       // ACTIVE, CLOSED
+    private double depositAmount;       // Tiền gốc ban đầu gửi vào sổ tiết kiệm
+    private double interestRate;        // Lãi suất (% mỗi chu kỳ)
+    private int termPeriod;             // Chu kỳ tính lãi (tính bằng giây để dễ demo trực tiếp)
+    private double accumulatedInterest; // Tiền lãi cộng dồn qua các chu kỳ (tất toán nhận = depositAmount + accumulatedInterest)
+    private String status;
     private Timestamp createdAt;
 
     public Saving() {}

@@ -55,9 +55,9 @@ Dự án **e-Banking RMI** mô phỏng một hệ thống ngân hàng điện t�
 - **Tại sao các model phải `implements Serializable`?** Vì Client và Server nằm trên các JVM khác nhau (không dùng chung bộ nhớ RAM), toàn bộ đối tượng truyền qua mạng (`Account`, `Bill`, `Saving`, `Transaction`) phải được tuần tự hóa thành byte stream (`serialVersionUID = 1L`).
 
 ### 2.3. Giải quyết lỗi mạng thực tế khi chạy nhiều máy (`RmiConfig.java`)
-1. **Lỗi `Connection refused to host: 127.0.0.1` hoặc card mạng ảo:**
-   - Mặc định JVM có thể nhúng `127.0.0.1` hoặc IP card ảo (`192.168.56.x` của VirtualBox/VMware) vào Stub. Khi máy khác nhận Stub sẽ gọi nhầm vào chính nó.
-   - **Cách dự án xử lý:** `RmiConfig.getAvailableNetworkInterfaces()` quét các card mạng vật lý đang bật, loại bỏ loopback (`127.0.0.1`), loại bỏ adapter ảo (`virtualbox`, `host-only`, `vmware`, `vethernet`, dải `192.168.56.*`), ưu tiên Wi-Fi/Ethernet thật hoặc Radmin/Hamachi/Tailscale VPN, sau đó thiết lập:
+1. **Lỗi `Connection refused to host: 127.0.0.1` khi chạy khác máy:**
+   - Mặc định JVM có thể nhúng `127.0.0.1` vào Stub. Khi máy khác nhận Stub sẽ gọi nhầm vào chính nó.
+   - **Cách dự án xử lý:** `RmiConfig.getLocalIp()` tự động quét các card mạng đang hoạt động (`isUp()`), lấy địa chỉ IPv4 LAN / Wi-Fi thật của máy (bỏ qua loopback `127.0.0.1`), sau đó thiết lập:
      ```java
      System.setProperty("java.rmi.server.hostname", selectedIp);
      ```
@@ -188,9 +188,9 @@ ebanking-rmi/
     │   │   ├── Saving.java                  # Model sổ tiết kiệm (id, accountNumber, depositAmount, interestRate, termPeriod, accumulatedInterest, status, createdAt)
     │   │   └── Transaction.java             # Model lịch sử giao dịch (id, transactionType, fromAccount, toAccount, amount, description, createdAt, status)
     │   └── rmi/
-    │       ├── IBankService.java            # Remote Interface định nghĩa 19 phương thức nghiệp vụ ngân hàng
+    │       ├── IBankService.java            # Remote Interface định nghĩa 21 phương thức nghiệp vụ ngân hàng
     │       ├── IClientCallback.java         # Remote Interface callback 2 phương thức: notifyBalanceChange, forceLogout
-    │       └── RmiConfig.java               # Cố định port 1099/1098/1097, dò card mạng thật, ping TCP & test RMI service
+    │       └── RmiConfig.java               # Cố định port 1099/1098/1097, tự lấy IP LAN/Wi-Fi, ping TCP & test RMI service
     ├── server/                              # Tầng Server (chạy trên Máy 1)
     │   ├── ServerMain.java                  # Entry-point Server: nhận -ip/-regPort/-srvPort, init DB, tạo Registry 1099, bind BankService 1098
     │   ├── db/

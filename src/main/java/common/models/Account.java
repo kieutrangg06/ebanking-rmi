@@ -2,7 +2,9 @@ package common.models;
 
 import java.io.Serializable;
 
+// Đánh dấu class cho phép tuần tự hóa thành byte để truyền qua mạng RMI giữa Server và Client
 public class Account implements Serializable {
+    // Mã phiên bản giúp JVM kiểm tra khớp cấu trúc class giữa Server và Client khi giải mã (tránh InvalidClassException)
     private static final long serialVersionUID = 1L;
 
     private int id;
@@ -11,7 +13,7 @@ public class Account implements Serializable {
     private String password;
     private String fullName;
     private double balance;
-    private String status; // ACTIVE, LOCKED
+    private String status;
 
     public Account() {}
 

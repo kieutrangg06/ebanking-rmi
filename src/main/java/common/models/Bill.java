@@ -10,7 +10,7 @@ public class Bill implements Serializable {
     private String serviceType;
     private String customerName;
     private double amount;
-    private String status; // UNPAID, PAID
+    private String status;
 
     public Bill() {}
 
