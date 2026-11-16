@@ -1,16 +1,19 @@
 package common.rmi;
 
 import java.io.IOException;            // Xử lý ngoại lệ vào/ra khi kiểm tra cổng Socket
-import java.net.DatagramSocket;        // Socket UDP dùng tra cứu bảng định tuyến mạng của hệ điều hành
-import java.net.InetAddress;           // Lớp đại diện cho địa chỉ mạng IP nói chung
+import java.net.Inet4Address;          // Lớp chuẩn theo slide bài giảng đại diện cho địa chỉ IPv4
+import java.net.InetAddress;           // Lớp chuẩn theo slide bài giảng đại diện cho địa chỉ IP
+import java.net.NetworkInterface;      // Lớp chuẩn theo slide bài giảng đại diện cho card mạng vật lý
 import java.net.ServerSocket;          // Socket máy chủ dùng để kiểm tra cổng có bị chiếm dụng không
 import java.rmi.registry.LocateRegistry; // Dùng để kết nối hoặc tra cứu bộ danh bạ RMI Registry
 import java.rmi.registry.Registry;       // Giao diện điều khiển bộ danh bạ RMI Registry
+import java.util.Collections;          // Tiện ích duyệt danh sách theo chuẩn Java Collection
+import java.util.Enumeration;          // Kiểu tập hợp danh sách card mạng theo chuẩn Java Networking API
 
 /**
- * Lớp cấu hình mạng cho toàn bộ hệ thống e-Banking RMI:
+ * Lớp cấu hình mạng cho toàn bộ hệ thống e-Banking RMI (Chuẩn theo Slide bài giảng Lập trình mạng):
  * - Cố định 3 cổng TCP (1099, 1098, 1097) để mở tường lửa Windows dễ dàng.
- * - Tự động dò tìm địa chỉ IPv4 LAN / Wi-Fi đang kết nối của máy tính.
+ * - Sử dụng NetworkInterface và InetAddress để lấy địa chỉ IPv4 Wi-Fi / LAN của máy tính.
  * - Hỗ trợ cấp phát cổng an toàn và đo độ trễ mạng (Ping) trên giao diện.
  */
 public class RmiConfig {
@@ -43,18 +46,45 @@ public class RmiConfig {
     }
 
     // =========================================================================
-    // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
+    // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI (CHUẨN SLIDE BÀI GIẢNG JAVA NETWORKING)
     // =========================================================================
     /**
-     * Tự động lấy IPv4 LAN / Wi-Fi đang hoạt động qua bảng định tuyến Socket của hệ điều hành
+     * Quét các card mạng trên máy tính bằng NetworkInterface và InetAddress theo chuẩn bài giảng:
+     * - Duyệt qua danh sách NetworkInterface.getNetworkInterfaces()
+     * - Bỏ qua card bị tắt (!isUp) hoặc card loopback nội bộ (isLoopback)
+     * - Ưu tiên chọn card mạng không dây Wi-Fi đang kết nối để lấy IPv4
      */
     public static String getLocalIp() {
-        try (DatagramSocket socket = new DatagramSocket()) {
-            socket.connect(InetAddress.getByName("8.8.8.8"), 10002);
-            return socket.getLocalAddress().getHostAddress();
-        } catch (Exception e) {
-            return "127.0.0.1";
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            if (interfaces != null) {
+                String fallbackIp = null;
+                for (NetworkInterface iface : Collections.list(interfaces)) {
+                    // Bỏ qua card mạng đang bị tắt hoặc loopback nội bộ (127.0.0.1)
+                    if (!iface.isUp() || iface.isLoopback()) continue;
+
+                    // Nhận diện card mạng Wi-Fi
+                    String name = (iface.getName() + " " + iface.getDisplayName()).toLowerCase();
+                    boolean isWifi = name.contains("wi-fi") || name.contains("wifi") || name.contains("wlan") || name.contains("wireless");
+
+                    for (InetAddress addr : Collections.list(iface.getInetAddresses())) {
+                        if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
+                            String ip = addr.getHostAddress();
+                            // Ưu tiên số 1: Trả về ngay IP của card Wi-Fi
+                            if (isWifi) {
+                                return ip;
+                            }
+                            if (fallbackIp == null) {
+                                fallbackIp = ip;
+                            }
+                        }
+                    }
+                }
+                if (fallbackIp != null) return fallbackIp;
+            }
+        } catch (Exception ignored) {
         }
+        return "127.0.0.1";
     }
 
     /**
