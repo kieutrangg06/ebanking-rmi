@@ -1,6 +1,7 @@
 package common.rmi;
 
 import java.io.IOException;            // Xử lý ngoại lệ vào/ra khi kiểm tra cổng Socket
+import java.net.DatagramSocket;        // Socket UDP dùng tra cứu bảng định tuyến mạng của hệ điều hành
 import java.net.Inet4Address;          // Lớp đại diện cho địa chỉ IPv4 (dạng 192.168.x.x)
 import java.net.InetAddress;           // Lớp đại diện cho địa chỉ mạng IP nói chung
 import java.net.NetworkInterface;      // Lớp đại diện cho card mạng vật lý (Wi-Fi, Ethernet)
@@ -49,34 +50,41 @@ public class RmiConfig {
     // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
     // =========================================================================
     /**
-     * Quét các card mạng trên máy tính và tự động lấy IP Wi-Fi / LAN thật đang hoạt động
-     * (Tự động bỏ qua các card mạng ảo của VirtualBox / VMware để không bị lấy nhầm IP ảo)
+     * Tự động lấy địa chỉ IPv4 LAN / Wi-Fi đang hoạt động của máy tính:
+     * 1. Dò tìm qua bảng định tuyến Socket của hệ điều hành (chuẩn kiến trúc mạng)
+     * 2. Quét danh sách card mạng và ưu tiên card kết nối Wi-Fi / WLAN
      */
     public static String getLocalIp() {
+        // Phương pháp 1: Xác định giao diện mạng ra ngoài theo bảng định tuyến của hệ điều hành
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.connect(InetAddress.getByName("8.8.8.8"), 10002);
+            String ip = socket.getLocalAddress().getHostAddress();
+            if (ip != null && !ip.startsWith("127.")) {
+                return ip;
+            }
+        } catch (Exception ignored) {
+        }
+
+        // Phương pháp 2: Quét danh sách card mạng, ưu tiên card Wi-Fi / WLAN
         try {
-            // Lấy danh sách toàn bộ các card mạng (NetworkInterface) có trên máy tính
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             if (interfaces != null) {
                 String fallbackIp = null;
-                // Duyệt qua từng card mạng tìm được
                 for (NetworkInterface iface : Collections.list(interfaces)) {
-                    // Bỏ qua card mạng đang bị tắt (!isUp) hoặc card loopback nội bộ (127.0.0.1)
+                    // Bỏ qua card mạng đang bị tắt hoặc loopback
                     if (!iface.isUp() || iface.isLoopback()) continue;
 
-                    // Kiểm tra tên card mạng để nhận diện card ảo VirtualBox / VMware
+                    // Nhận diện card mạng không dây Wi-Fi / WLAN
                     String name = (iface.getName() + " " + iface.getDisplayName()).toLowerCase();
-                    boolean isVirtual = name.contains("virtual") || name.contains("vbox") || name.contains("vmware");
+                    boolean isWifi = name.contains("wi-fi") || name.contains("wifi") || name.contains("wlan") || name.contains("wireless");
 
-                    // Duyệt qua tất cả các địa chỉ IP được gán cho card mạng này
                     for (InetAddress addr : Collections.list(iface.getInetAddresses())) {
-                        // Chỉ lấy địa chỉ IPv4 và không phải là địa chỉ loopback
                         if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
                             String ip = addr.getHostAddress();
-                            // Ưu tiên hàng đầu: Trả về ngay IP của card Wi-Fi / LAN thật
-                            if (!isVirtual) {
+                            // Ưu tiên cao nhất cho card mạng Wi-Fi
+                            if (isWifi) {
                                 return ip;
                             }
-                            // Lưu tạm IP card ảo làm phương án dự phòng nếu máy không có card mạng nào khác
                             if (fallbackIp == null) {
                                 fallbackIp = ip;
                             }
@@ -87,7 +95,8 @@ public class RmiConfig {
             }
         } catch (Exception ignored) {
         }
-        // Trả về Localhost làm giá trị dự phòng nếu máy tính đang ngắt toàn bộ kết nối mạng
+
+        // Trả về Localhost làm giá trị dự phòng nếu ngắt toàn bộ kết nối mạng
         return "127.0.0.1";
     }
 
