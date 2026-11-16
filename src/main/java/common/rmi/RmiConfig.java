@@ -49,27 +49,41 @@ public class RmiConfig {
     // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
     // =========================================================================
     /**
-     * Quét các card mạng trên máy tính và lấy địa chỉ IPv4 thật đang kết nối Wi-Fi/LAN
+     * Quét các card mạng trên máy tính và tự động lấy IP Wi-Fi / LAN thật đang hoạt động
+     * (Tự động bỏ qua các card mạng ảo của VirtualBox / VMware để không bị lấy nhầm IP ảo)
      */
     public static String getLocalIp() {
         try {
             // Lấy danh sách toàn bộ các card mạng (NetworkInterface) có trên máy tính
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             if (interfaces != null) {
+                String fallbackIp = null;
                 // Duyệt qua từng card mạng tìm được
                 for (NetworkInterface iface : Collections.list(interfaces)) {
                     // Bỏ qua card mạng đang bị tắt (!isUp) hoặc card loopback nội bộ (127.0.0.1)
                     if (!iface.isUp() || iface.isLoopback()) continue;
 
+                    // Kiểm tra tên card mạng để nhận diện card ảo VirtualBox / VMware
+                    String name = (iface.getName() + " " + iface.getDisplayName()).toLowerCase();
+                    boolean isVirtual = name.contains("virtual") || name.contains("vbox") || name.contains("vmware");
+
                     // Duyệt qua tất cả các địa chỉ IP được gán cho card mạng này
                     for (InetAddress addr : Collections.list(iface.getInetAddresses())) {
                         // Chỉ lấy địa chỉ IPv4 và không phải là địa chỉ loopback
                         if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                            // Trả về chuỗi IP mạng thật đầu tiên tìm thấy (ví dụ: 192.168.1.15)
-                            return addr.getHostAddress();
+                            String ip = addr.getHostAddress();
+                            // Ưu tiên hàng đầu: Trả về ngay IP của card Wi-Fi / LAN thật
+                            if (!isVirtual) {
+                                return ip;
+                            }
+                            // Lưu tạm IP card ảo làm phương án dự phòng nếu máy không có card mạng nào khác
+                            if (fallbackIp == null) {
+                                fallbackIp = ip;
+                            }
                         }
                     }
                 }
+                if (fallbackIp != null) return fallbackIp;
             }
         } catch (Exception ignored) {
         }
