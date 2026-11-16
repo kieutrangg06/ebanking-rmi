@@ -287,7 +287,7 @@ public class AccountDAO {
     }
 
     /**
-     * Rút tiền từ tài khoản (Mô phỏng eBanking - Slide 36)
+     * Rút tiền từ tài khoản
      */
     public boolean withdraw(String accountNumber, double amount, String description) throws SQLException {
         if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;

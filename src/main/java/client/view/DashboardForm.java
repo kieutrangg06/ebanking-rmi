@@ -306,7 +306,7 @@ public class DashboardForm extends JFrame {
     }
 
     /**
-     * Hộp thoại NẠP TIỀN VÀO TÀI KHOẢN (Mô phỏng slide Bài 8)
+     * Hộp thoại NẠP TIỀN VÀO TÀI KHOẢN
      */
     private void openDepositDialog() {
         JDialog dialog = new JDialog(this, "Nạp Tiền Vào Tài Khoản", true);
@@ -410,7 +410,7 @@ public class DashboardForm extends JFrame {
     }
 
     /**
-     * Hộp thoại RÚT TIỀN KHỎI TÀI KHOẢN (Mô phỏng slide Bài 8)
+     * Hộp thoại RÚT TIỀN KHỎI TÀI KHOẢN
      */
     private void openWithdrawDialog() {
         JDialog dialog = new JDialog(this, "Rút Tiền Khỏi Tài Khoản", true);

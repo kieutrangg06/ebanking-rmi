@@ -2,14 +2,10 @@ package common.rmi;
 
 import java.io.IOException;            // Xử lý ngoại lệ vào/ra khi kiểm tra cổng Socket
 import java.net.DatagramSocket;        // Socket UDP dùng tra cứu bảng định tuyến mạng của hệ điều hành
-import java.net.Inet4Address;          // Lớp đại diện cho địa chỉ IPv4 (dạng 192.168.x.x)
 import java.net.InetAddress;           // Lớp đại diện cho địa chỉ mạng IP nói chung
-import java.net.NetworkInterface;      // Lớp đại diện cho card mạng vật lý (Wi-Fi, Ethernet)
 import java.net.ServerSocket;          // Socket máy chủ dùng để kiểm tra cổng có bị chiếm dụng không
 import java.rmi.registry.LocateRegistry; // Dùng để kết nối hoặc tra cứu bộ danh bạ RMI Registry
 import java.rmi.registry.Registry;       // Giao diện điều khiển bộ danh bạ RMI Registry
-import java.util.Collections;          // Tiện ích chuyển Enumeration thành danh sách để lặp for-each
-import java.util.Enumeration;          // Kiểu tập hợp các phần tử theo chuẩn mạng cũ của Java
 
 /**
  * Lớp cấu hình mạng cho toàn bộ hệ thống e-Banking RMI:

@@ -38,7 +38,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     // Map phụ lưu username -> accountNumber để tiện tra cứu phiên
     private final ConcurrentHashMap<String, String> userSessionMap = new ConcurrentHashMap<>();
 
-    // DAO và Tiến trình nền tính lãi của Người 3
+    // DAO và Tiến trình nền tự động tính lãi tiết kiệm
     private final SavingDAO savingDAO = new SavingDAO();
     private final InterestCalculatorTask interestCalculatorTask;
 
@@ -47,7 +47,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
      */
     public BankServiceImpl(int exportPort) throws RemoteException {
         super(RmiConfig.allocateSafePort(exportPort));
-        // Khởi động tiến trình quét sinh lãi định kỳ tự động của Người 3
+        // Khởi động tiến trình quét sinh lãi định kỳ tự động
         this.interestCalculatorTask = new InterestCalculatorTask(savingDAO, this::triggerCallback);
         this.interestCalculatorTask.start(10, 15);
     }
@@ -57,7 +57,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // NGƯỜI 1: AUTHENTICATION & QUẢN LÝ PHIÊN (LOGIN, LOGOUT, REGISTER)
+    // 1. XÁC THỰC & QUẢN LÝ PHIÊN (LOGIN, LOGOUT, REGISTER)
     // =========================================================================
 
     @Override
@@ -175,7 +175,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // NGƯỜI 1: CHUYỂN TIỀN ACID & RMI CALLBACK PATTERN
+    // 2. CHUYỂN TIỀN ACID & RMI CALLBACK PATTERN
     // =========================================================================
 
     @Override
@@ -203,7 +203,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // MÔ PHỎNG EBANKING THEO SLIDE BÀI 8: NẠP TIỀN & RÚT TIỀN (CALLBACK REALTIME)
+    // NẠP TIỀN & RÚT TIỀN (CALLBACK REALTIME)
     // =========================================================================
 
     @Override
@@ -245,7 +245,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // NGƯỜI 2: THANH TOÁN HÓA ĐƠN & XUẤT SAO KÊ GIAO DỊCH (3-TIER + ACID)
+    // 3. THANH TOÁN HÓA ĐƠN & XUẤT SAO KÊ GIAO DỊCH (3-TIER + ACID)
     // =========================================================================
 
     @Override
@@ -254,30 +254,13 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     @Override
-    public synchronized boolean payBill(String param1, String param2) throws RemoteException {
-        // Tự động phân định tham số (hỗ trợ cả payBill(acc, billCode) và payBill(billCode, acc)):
-        String accountNumber;
-        String billCode;
-
-        Bill checkBillParam2 = billDAO.queryBill(param2);
-        if (checkBillParam2 != null) {
-            accountNumber = param1;
-            billCode = param2;
-        } else {
-            Bill checkBillParam1 = billDAO.queryBill(param1);
-            if (checkBillParam1 != null) {
-                billCode = param1;
-                accountNumber = param2;
-            } else {
-                accountNumber = param1;
-                billCode = param2;
-            }
-        }
-
+    public synchronized boolean payBill(String accountNumber, String billCode) throws RemoteException {
         if (accountNumber == null || accountNumber.trim().isEmpty() ||
             billCode == null || billCode.trim().isEmpty()) {
             throw new RemoteException("Thông tin số tài khoản hoặc mã hóa đơn không hợp lệ!");
         }
+        accountNumber = accountNumber.trim();
+        billCode = billCode.trim();
 
         Connection conn = null;
         try {
@@ -390,7 +373,7 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
     }
 
     // =========================================================================
-    // PHẦN VIỆC CỦA NGƯỜI 3: TIẾT KIỆM TỰ ĐỘNG, ADMIN MONITORING & FORCE LOGOUT
+    // 4. TIẾT KIỆM TỰ ĐỘNG, ADMIN MONITORING & FORCE LOGOUT
     // =========================================================================
 
     @Override
@@ -529,10 +512,6 @@ public class BankServiceImpl extends UnicastRemoteObject implements IBankService
             e.printStackTrace();
             return 0.0;
         }
-    }
-
-    public InterestCalculatorTask getInterestCalculatorTask() {
-        return interestCalculatorTask;
     }
 
     // =========================================================================
