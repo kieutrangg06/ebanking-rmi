@@ -9,7 +9,6 @@ import java.util.Date;
 import java.util.List;
 
 /**
- * Data Access Object phụ trách bảng transactions.
  * Tuân thủ mô hình 3-Tier Architecture.
  */
 public class TransactionDAO {

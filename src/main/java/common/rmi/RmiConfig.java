@@ -18,9 +18,6 @@ import java.util.Enumeration;          // Kiểu tập hợp các phần tử th
  */
 public class RmiConfig {
 
-    // =========================================================================
-    // 1. DANH MỤC CÁC CỔNG CỐ ĐỊNH (FIXED PORTS)
-    // =========================================================================
     // Cổng RMI Registry mặc định theo chuẩn Java RMI để đăng ký và tìm kiếm dịch vụ
     public static final int DEFAULT_REGISTRY_PORT = 1099;
 
@@ -37,21 +34,19 @@ public class RmiConfig {
     public static final String PROP_SERVER_HOSTNAME = "java.rmi.server.hostname";
 
     // =========================================================================
-    // 2. THIẾT LẬP IP CHO REMOTE STUB (TRUYỀN ĐÚNG IP QUA MẠNG WI-FI / LAN)
+    // THIẾT LẬP IP CHO REMOTE STUB (TRUYỀN ĐÚNG IP QUA MẠNG WI-FI / LAN)
     // =========================================================================
     /**
      * Gán IP mạng thật vào thuộc tính hệ thống để Client từ xa nhận đúng địa chỉ gọi về Server
      */
     public static void setRmiHostname(String ip) {
-        // Kiểm tra chuỗi IP truyền vào không được null và không được để trống
         if (ip != null && !ip.trim().isEmpty()) {
-            // Gán giá trị IP vào biến môi trường java.rmi.server.hostname của JVM
             System.setProperty(PROP_SERVER_HOSTNAME, ip.trim());
         }
     }
 
     // =========================================================================
-    // 3. TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
+    // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
     // =========================================================================
     /**
      * Quét các card mạng trên máy tính và lấy địa chỉ IPv4 thật đang kết nối Wi-Fi/LAN
@@ -77,7 +72,6 @@ public class RmiConfig {
                 }
             }
         } catch (Exception ignored) {
-            // Bỏ qua lỗi nếu không đọc được card mạng
         }
         // Trả về Localhost làm giá trị dự phòng nếu máy tính đang ngắt toàn bộ kết nối mạng
         return "127.0.0.1";
@@ -91,7 +85,7 @@ public class RmiConfig {
     }
 
     // =========================================================================
-    // 4. CẤP PHÁT CỔNG AN TOÀN CHỐNG XUNG ĐỘT (PORT ALLOCATION)
+    // CẤP PHÁT CỔNG AN TOÀN CHỐNG XUNG ĐỘT (PORT ALLOCATION)
     // =========================================================================
     /**
      * Cấp phát cổng an toàn: Nếu cổng 1097 đã bị chiếm thì tự bốc cổng ngẫu nhiên 0 để không bị crash
@@ -113,7 +107,7 @@ public class RmiConfig {
     }
 
     // =========================================================================
-    // 5. ĐỐI TƯỢNG VÀ HÀM ĐO ĐỘ TRỄ KẾT NỐI (PING & HEALTH CHECK)
+    // ĐỐI TƯỢNG VÀ HÀM ĐO ĐỘ TRỄ KẾT NỐI (PING & HEALTH CHECK)
     // =========================================================================
     /**
      * Lớp đóng gói kết quả kiểm tra kết nối mạng RMI

@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Data Access Object phụ trách nghiệp vụ Sổ Tiết Kiệm và Quản Trị Hệ Thống (Dev 3).
  * Đảm bảo tính toán toàn vẹn ACID, chống Race Condition và Deadlock.
  */
 public class SavingDAO {

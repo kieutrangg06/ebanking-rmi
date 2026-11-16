@@ -8,10 +8,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-/**
- * Data Access Object phụ trách bảng bills.
- * Tuân thủ mô hình 3-Tier Architecture.
- */
 public class BillDAO {
 
     /**

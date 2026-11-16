@@ -238,7 +238,7 @@ public class AccountDAO {
     }
 
     /**
-     * Nạp tiền vào tài khoản (Mô phỏng eBanking - Slide 36)
+     * Nạp tiền vào tài khoản
      */
     public boolean deposit(String accountNumber, double amount, String description) throws SQLException {
         if (amount <= 0 || accountNumber == null || accountNumber.trim().isEmpty()) return false;
