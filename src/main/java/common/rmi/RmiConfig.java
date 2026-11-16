@@ -50,54 +50,15 @@ public class RmiConfig {
     // TỰ ĐỘNG LẤY ĐỊA CHỈ IP LAN / WI-FI ĐANG HOẠT ĐỘNG
     // =========================================================================
     /**
-     * Tự động lấy địa chỉ IPv4 LAN / Wi-Fi đang hoạt động của máy tính:
-     * 1. Dò tìm qua bảng định tuyến Socket của hệ điều hành (chuẩn kiến trúc mạng)
-     * 2. Quét danh sách card mạng và ưu tiên card kết nối Wi-Fi / WLAN
+     * Tự động lấy IPv4 LAN / Wi-Fi đang hoạt động qua bảng định tuyến Socket của hệ điều hành
      */
     public static String getLocalIp() {
-        // Phương pháp 1: Xác định giao diện mạng ra ngoài theo bảng định tuyến của hệ điều hành
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.connect(InetAddress.getByName("8.8.8.8"), 10002);
-            String ip = socket.getLocalAddress().getHostAddress();
-            if (ip != null && !ip.startsWith("127.")) {
-                return ip;
-            }
-        } catch (Exception ignored) {
+            return socket.getLocalAddress().getHostAddress();
+        } catch (Exception e) {
+            return "127.0.0.1";
         }
-
-        // Phương pháp 2: Quét danh sách card mạng, ưu tiên card Wi-Fi / WLAN
-        try {
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            if (interfaces != null) {
-                String fallbackIp = null;
-                for (NetworkInterface iface : Collections.list(interfaces)) {
-                    // Bỏ qua card mạng đang bị tắt hoặc loopback
-                    if (!iface.isUp() || iface.isLoopback()) continue;
-
-                    // Nhận diện card mạng không dây Wi-Fi / WLAN
-                    String name = (iface.getName() + " " + iface.getDisplayName()).toLowerCase();
-                    boolean isWifi = name.contains("wi-fi") || name.contains("wifi") || name.contains("wlan") || name.contains("wireless");
-
-                    for (InetAddress addr : Collections.list(iface.getInetAddresses())) {
-                        if (addr instanceof Inet4Address && !addr.isLoopbackAddress()) {
-                            String ip = addr.getHostAddress();
-                            // Ưu tiên cao nhất cho card mạng Wi-Fi
-                            if (isWifi) {
-                                return ip;
-                            }
-                            if (fallbackIp == null) {
-                                fallbackIp = ip;
-                            }
-                        }
-                    }
-                }
-                if (fallbackIp != null) return fallbackIp;
-            }
-        } catch (Exception ignored) {
-        }
-
-        // Trả về Localhost làm giá trị dự phòng nếu ngắt toàn bộ kết nối mạng
-        return "127.0.0.1";
     }
 
     /**
